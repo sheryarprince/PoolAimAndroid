@@ -126,19 +126,29 @@ class OverlayCaptureService : Service() {
     }
 
     private fun imageToBitmap(image: Image): Bitmap? {
-        if (image.planes.isEmpty()) return null
+        if (image.planes.isEmpty() || image.width <= 0 || image.height <= 0) return null
         val plane = image.planes[0]
         val pixelStride = plane.pixelStride
         val rowStride = plane.rowStride
-        if (pixelStride != 4 || rowStride < image.width * pixelStride) return null
-        val paddedWidth = rowStride / pixelStride
-        val buffer: ByteBuffer = plane.buffer
-        buffer.rewind()
-        val padded = Bitmap.createBitmap(paddedWidth, image.height, Bitmap.Config.ARGB_8888)
-        padded.copyPixelsFromBuffer(buffer)
-        val cropped = Bitmap.createBitmap(padded, 0, 0, image.width, image.height)
-        if (cropped !== padded) padded.recycle()
-        return cropped
+        val rowBytes = image.width * 4
+        if (pixelStride != 4 || rowStride < rowBytes) return null
+
+        // ImageReader buffers may include row padding, and the final row is not
+        // guaranteed to expose a complete padded row. Copy only visible pixels.
+        val source = plane.buffer.duplicate()
+        val requiredLastByte = (image.height - 1L) * rowStride + rowBytes
+        if (requiredLastByte > source.limit()) return null
+        val packed = ByteBuffer.allocateDirect(rowBytes * image.height)
+        val row = ByteArray(rowBytes)
+        for (y in 0 until image.height) {
+            source.position(y * rowStride)
+            source.get(row, 0, rowBytes)
+            packed.put(row)
+        }
+        packed.flip()
+        return Bitmap.createBitmap(image.width, image.height, Bitmap.Config.ARGB_8888).also {
+            it.copyPixelsFromBuffer(packed)
+        }
     }
 
     private fun addGuide() {
