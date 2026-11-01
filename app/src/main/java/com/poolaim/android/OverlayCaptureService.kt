@@ -381,6 +381,8 @@ class OverlayCaptureService : Service() {
             p.textAlign = Paint.Align.CENTER
             p.textSize = dp(18).toFloat()
             canvas.drawText("POCKET CALIBRATION", width / 2f, dp(54).toFloat(), p)
+            p.textSize = dp(11).toFloat()
+            canvas.drawText("CANCEL", width - dp(42).toFloat(), dp(54).toFloat(), p)
             p.textSize = dp(14).toFloat()
             val next = points.size.coerceAtMost(5)
             canvas.drawText(
@@ -400,12 +402,12 @@ class OverlayCaptureService : Service() {
             }
             p.textSize = dp(12).toFloat()
             p.color = Color.WHITE
-            canvas.drawText("Tap the centre of each pocket in order. Tap here to cancel.", width / 2f, height - dp(28).toFloat(), p)
+            canvas.drawText("Tap each pocket centre in order: TL, TM, TR, BR, BM, BL", width / 2f, height - dp(28).toFloat(), p)
         }
 
         override fun onTouchEvent(event: android.view.MotionEvent): Boolean {
             if (event.action != android.view.MotionEvent.ACTION_UP) return true
-            if (event.y < dp(105) || event.y > height - dp(55)) {
+            if (event.x > width - dp(82) && event.y < dp(76)) {
                 cancelCalibration()
                 return true
             }
