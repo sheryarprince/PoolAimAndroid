@@ -16,13 +16,13 @@ The performance target is 20–30 processed frames per second on supported devic
 - Six pocket centres can now be calibrated by touch and persisted locally; guide geometry uses those calibrated positions instead of assuming pocket centres are exactly at table-rectangle corners.
 - The overlay ranks direct ghost-ball and one-cushion bank-shot proposals by path length and cut angle, and rejects paths obstructed by another detected ball.
 - Capture is throttled to at most approximately 30 FPS and a single-flight background executor skips frames when analysis is busy.
-- This is a classical-CV prototype. No pool-specific trained AI/ONNX model is bundled; AI recognition remains blocked on labelled gameplay data and model evaluation.
+- This is a classical-CV prototype. OpenCV's Android implementation executes its image primitives in native code behind the Kotlin API. No pool-specific trained AI/ONNX model is bundled; AI recognition remains blocked on an appropriately licensed, labelled dataset and model evaluation.
 
 ## Target architecture
 
 1. **Capture:** MediaProjection + ImageReader; handle orientation and display-size changes; avoid blocking the UI thread.
 2. **OpenCV preprocessing:** ROI selection, colour/edge features, perspective normalization and image-quality checks.
-3. **AI detector:** A custom, quantized object-detection model for table rails, six pockets, cue ball and object balls. The model must be trained/evaluated on representative screenshots before integration. Generic off-the-shelf object detectors are not assumed to recognize pool balls reliably.
+3. **AI detector:** A custom, quantized object-detection model for table rails, six pockets, cue ball and object balls. The model must be trained/evaluated on representative, explicitly provided or consented labelled frame data before integration. The live app processes frames in memory; users are not required to take or upload screenshots. Generic off-the-shelf object detectors are not assumed to recognize pool balls reliably.
 4. **Tracking and calibration:** Associate detections across frames; estimate table plane and ball radius; smooth noisy positions; reject low-confidence frames.
 5. **Geometry engine:** Ghost-ball contact point, object-ball tangent direction, direct pocket paths, collision checks and one/two/three-cushion reflection paths.
 6. **Overlay renderer:** Draw only from current high-confidence detections; transform table coordinates to screen coordinates; show confidence/status and provide hide/minimize controls.
@@ -49,7 +49,7 @@ The performance target is 20–30 processed frames per second on supported devic
 
 ### D. Shot geometry (direct-shot ghost-ball, obstruction checks and one-cushion bank-shot prototype implemented; rail/collision validation and unit tests pending)
 - Unit-test ghost-ball, tangent and cushion reflection calculations.
-- Compare predictions with labelled practice screenshots.
+- Compare predictions with an explicitly consented, labelled evaluation set.
 - Draw direct and bank-shot guides only when geometry and detection confidence pass thresholds.
 
 ### E. Device optimization
@@ -63,4 +63,6 @@ No game APK patching, process-memory reading, injection, anti-cheat evasion, aut
 
 ## Required test data
 
-The AI detector needs representative, labelled gameplay screenshots covering cue/object balls, solids/stripes/8-ball, table skins, lighting, occlusions, pocket positions, resolutions and portrait/landscape layouts. No trained model is included yet.
+The AI detector needs representative, labelled gameplay frames covering cue/object balls, solids/stripes/8-ball, table skins, lighting, occlusions, pocket positions, resolutions and portrait/landscape layouts. These may be contributed as a separately consented dataset; live runtime frames remain in memory. No trained model is included yet.
+
+See [HYBRID_RECOGNITION_ARCHITECTURE.md](HYBRID_RECOGNITION_ARCHITECTURE.md) for the agreed live-stream, source-adapter and fusion design.
