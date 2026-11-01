@@ -10,9 +10,12 @@ The performance target is 20–30 processed frames per second on supported devic
 
 - Kotlin Android app with MediaProjection screen capture and a floating overlay.
 - OpenCV 4.10.0 Android AAR dependency.
-- OpenCV preprocessing pipeline converts captured RGBA frames to grayscale, downsizes to a maximum 960-pixel long edge, blurs and computes Canny edges.
-- Capture frames are throttled to at most approximately 30 FPS and processed on a single background executor.
-- Placeholder aiming geometry is disabled until validated live detections exist. The current preprocessing stage does not identify balls, pockets or the table.
+- OpenCV HSV/felt segmentation proposes the playable table rectangle; HoughCircles proposes ball centres and radii.
+- Colour-distance filtering rejects felt-like proposals; near-white uniformity ranks a possible cue ball.
+- Nearest-neighbour exponential smoothing stabilizes ball proposals between frames.
+- The overlay ranks direct ghost-ball shots by cue path length, object-ball path length and cut angle, and rejects paths obstructed by another detected ball.
+- Capture is throttled to at most approximately 30 FPS and a single-flight background executor skips frames when analysis is busy.
+- This is a classical-CV prototype. No pool-specific trained AI/ONNX model is bundled; AI recognition remains blocked on labelled gameplay data and model evaluation.
 
 ## Target architecture
 
@@ -26,23 +29,23 @@ The performance target is 20–30 processed frames per second on supported devic
 
 ## Milestones and acceptance criteria
 
-### A. Capture and preprocessing (in progress)
+### A. Capture and preprocessing (implemented; device benchmark pending)
 - App builds successfully.
 - Captured frames are closed reliably and processed off the main thread.
 - Sustained frame rate and processing latency are logged.
 - No guessed guideline is displayed when detection is unavailable.
 
-### B. Table and pocket detection
+### B. Table and pocket detection (table rectangle prototype implemented; six-pocket calibration/validation pending)
 - Detect table polygon and six pocket centres across multiple table themes, orientations and screen sizes.
 - Calibrate screen-to-table coordinates.
 - Reject menu screens and partial/occluded tables.
 
-### C. Ball detection and tracking
+### C. Ball detection and tracking (OpenCV circle proposals and temporal smoothing implemented; trained AI validation pending)
 - Train/evaluate a custom detector for cue ball and object balls.
 - Return class, centre, radius and confidence.
 - Track balls without jumping between frames; explicitly mark uncertain detections.
 
-### D. Shot geometry
+### D. Shot geometry (direct-shot ghost-ball and obstruction prototype implemented; bank-shot simulation and unit tests pending)
 - Unit-test ghost-ball, tangent and cushion reflection calculations.
 - Compare predictions with labelled practice screenshots.
 - Draw direct and bank-shot guides only when geometry and detection confidence pass thresholds.
