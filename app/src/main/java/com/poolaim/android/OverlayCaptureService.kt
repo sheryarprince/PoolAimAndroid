@@ -257,16 +257,6 @@ class OverlayCaptureService : Service() {
             val objects = result.balls.filterNot { it.isCueBall }
             if (objects.isEmpty()) return
 
-            // Never invent pocket positions from the table rectangle. Require
-            // a user calibration before drawing any shot or pocket reference lines.
-            if (ps == null || ps.size != 6) {
-                paint.style = Paint.Style.FILL
-                paint.color = Color.WHITE
-                paint.textSize = dp(12).toFloat()
-                c.drawText("Tap CALIBRATE 6 POCKETS", table.left, table.top - dp(7).toFloat(), paint)
-                return
-            }
-
             paint.style = Paint.Style.STROKE
             paint.color = Color.WHITE
             paint.strokeWidth = dp(2).toFloat()
@@ -296,6 +286,16 @@ class OverlayCaptureService : Service() {
             paint.color = Color.CYAN
             paint.strokeWidth = 2f
             c.drawCircle(cuePoint.x, cuePoint.y, viewRadius * 1.35f, paint)
+
+            // Keep recognition visible while uncalibrated, but never draw a
+            // shot path using guessed pocket locations.
+            if (ps == null || ps.size != 6) {
+                paint.style = Paint.Style.FILL
+                paint.color = Color.WHITE
+                paint.textSize = dp(12).toFloat()
+                c.drawText("Tap CALIBRATE 6 POCKETS", table.left, table.top - dp(7).toFloat(), paint)
+                return
+            }
 
             data class CandidateShot(val cue: PointF, val ghost: PointF, val target: PointF, val pocket: PointF, val score: Float)
             fun pointSegmentDistance(p: PointF, a: PointF, b: PointF): Float {
