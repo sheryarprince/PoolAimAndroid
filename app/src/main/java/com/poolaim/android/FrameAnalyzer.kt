@@ -96,9 +96,9 @@ class FrameAnalyzer {
                 for (i in 0 until circles.cols()) {
                     val v = circles.get(0, i) ?: continue
                     if (v.size < 3) continue
-                    val cx = (v[0] + left) * frameScaleX
-                    val cy = (v[1] + top) * frameScaleY
-                    val radius = v[2] * ((frameScaleX + frameScaleY) * 0.5f)
+                    val cx = ((v[0] + left) * frameScaleX).toFloat()
+                    val cy = ((v[1] + top) * frameScaleY).toFloat()
+                    val radius = (v[2] * ((frameScaleX + frameScaleY) * 0.5f)).toFloat()
                     if (cx < table.left + radius || cx > table.right - radius || cy < table.top + radius || cy > table.bottom - radius) continue
                     val hx = (cx / bitmap.width * hsv.cols()).roundToInt().coerceIn(0, hsv.cols() - 1)
                     val hy = (cy / bitmap.height * hsv.rows()).roundToInt().coerceIn(0, hsv.rows() - 1)
