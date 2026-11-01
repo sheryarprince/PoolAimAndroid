@@ -171,6 +171,41 @@ class OverlayCaptureService : Service() {
         wm.addView(root, lp); panel = root
     }
 
+    /** Replace the expanded settings panel with a compact tap-to-restore bubble. */
+    private fun showMiniBubble() {
+        if (miniBubble != null) return
+        val target = panel ?: return
+        val bubble = TextView(this).apply {
+            text = "POOL AIM"
+            textSize = 13f
+            setTextColor(Color.WHITE)
+            setTypeface(typeface, 1)
+            setPadding(dp(14), dp(10), dp(14), dp(10))
+            background = GradientDrawable().apply {
+                setColor(Color.rgb(0, 125, 145))
+                cornerRadius = dp(24).toFloat()
+                setStroke(dp(1), Color.WHITE)
+            }
+            elevation = dp(8).toFloat()
+            setOnClickListener {
+                try { wm.removeView(this) } catch (_: Exception) {}
+                miniBubble = null
+                target.visibility = View.VISIBLE
+            }
+        }
+        val type = if (Build.VERSION.SDK_INT >= 26) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE
+        val lp = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT, type,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            PixelFormat.TRANSLUCENT
+        )
+        lp.gravity = Gravity.TOP or Gravity.END
+        lp.x = dp(10)
+        lp.y = dp(90)
+        wm.addView(bubble, lp)
+        miniBubble = bubble
+    }
+
     private fun section(t: String) = TextView(this).apply { text = t; textSize = 14f; setTextColor(Color.rgb(0,125,145)); setTypeface(typeface,1); setPadding(0,dp(6),0,dp(2)) }
     private fun switch(parent: LinearLayout, t: String, initial: Boolean, cb: (Boolean)->Unit) {
         parent.addView(Switch(this).apply { text=t; textSize=13f; setTextColor(Color.DKGRAY); isChecked=initial; setOnCheckedChangeListener { _,v -> cb(v) } },
