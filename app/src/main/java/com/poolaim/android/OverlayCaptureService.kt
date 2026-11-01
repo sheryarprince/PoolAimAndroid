@@ -5,17 +5,24 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
+import android.graphics.Color
 import android.graphics.PixelFormat
+import android.graphics.drawable.GradientDrawable
+import android.hardware.display.DisplayManager
 import android.media.ImageReader
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
-import android.hardware.display.DisplayManager
 import android.os.Build
 import android.os.IBinder
 import android.view.Gravity
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.LinearLayout
+import android.widget.RadioButton
+import android.widget.RadioGroup
+import android.widget.ScrollView
+import android.widget.Switch
+import android.widget.TextView
 
 class OverlayCaptureService : Service() {
     companion object {
@@ -28,6 +35,8 @@ class OverlayCaptureService : Service() {
     private var reader: ImageReader? = null
     private var overlay: LinearLayout? = null
     private var enabled = false
+    private val switches = mutableListOf<Switch>()
+    private var guidelineStyle = "Normal"
     private lateinit var windowManager: WindowManager
 
     override fun onCreate() {
@@ -72,11 +81,50 @@ class OverlayCaptureService : Service() {
             "PoolAimScreenCapture", width, height, metrics.densityDpi,
             DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, reader?.surface, null, null
         )
-        // Capture permission is user-controlled. Frames remain on-device; no network upload is implemented.
+        // User-approved capture only. Frames remain on-device; no network upload is implemented.
+    }
+
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+
+    private fun label(text: String, size: Float = 14f, bold: Boolean = false): TextView =
+        TextView(this).apply {
+            this.text = text
+            textSize = size
+            setTextColor(Color.rgb(45, 50, 58))
+            if (bold) setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding(0, dp(7), 0, dp(7))
+        }
+
+    private fun addSwitch(parent: LinearLayout, title: String, initial: Boolean = true) {
+        val item = Switch(this).apply {
+            text = title
+            textSize = 14f
+            setTextColor(Color.rgb(45, 50, 58))
+            isChecked = initial
+            setPadding(dp(2), dp(5), dp(2), dp(5))
+        }
+        switches.add(item)
+        parent.addView(item, LinearLayout.LayoutParams(-1, dp(44)))
     }
 
     private fun showOverlay() {
         if (overlay != null) return
+
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(10), dp(10), dp(10), dp(10))
+            background = GradientDrawable().apply {
+                setColor(Color.WHITE)
+                cornerRadius = dp(12).toFloat()
+                setStroke(dp(1), Color.rgb(220, 225, 230))
+            }
+            elevation = dp(10).toFloat()
+        }
+
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
         val toggle = Button(this).apply {
             text = "AIM: OFF"
             setOnClickListener {
@@ -84,24 +132,93 @@ class OverlayCaptureService : Service() {
                 text = if (enabled) "AIM: ON" else "AIM: OFF"
             }
         }
-        val panel = LinearLayout(this).apply {
+        val settingsButton = Button(this).apply {
+            text = "SETTINGS"
+        }
+        header.addView(toggle, LinearLayout.LayoutParams(0, dp(46), 1f))
+        header.addView(settingsButton, LinearLayout.LayoutParams(-2, dp(46)))
+        root.addView(header)
+
+        val settings = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            addView(toggle)
+            visibility = android.view.View.GONE
+        }
+        settings.addView(label("Guideline Settings", 17f, true))
+        addSwitch(settings, "Auto Lengthen Guideline", true)
+        settings.addView(label("Premium Features", 15f, true).apply {
+            setTextColor(Color.rgb(0, 128, 145))
+        })
+        addSwitch(settings, "Cushion Shot Guideline", true)
+        addSwitch(settings, "Show 3 Lines", true)
+        addSwitch(settings, "Show Edges of Ball", true)
+        settings.addView(label("Guideline Style", 14f, true))
+
+        val styles = RadioGroup(this).apply {
+            orientation = RadioGroup.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        listOf("Thin", "Normal", "Thick").forEach { style ->
+            val option = RadioButton(this).apply {
+                text = style
+                textSize = 13f
+                isChecked = style == guidelineStyle
+                setOnClickListener { guidelineStyle = style }
+            }
+            styles.addView(option, RadioGroup.LayoutParams(0, dp(44), 1f))
+        }
+        settings.addView(styles)
+
+        settings.addView(label("Accuracy tip: For long-range bank or kick shots, use firm cue-ball contact to reduce unwanted follow-ball effect.", 12f))
+        val actions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.END
+        }
+        val reset = Button(this).apply {
+            text = "RESET"
+            setOnClickListener {
+                switches.forEach { it.isChecked = true }
+                guidelineStyle = "Normal"
+                (0 until styles.childCount).forEach { index ->
+                    (styles.getChildAt(index) as? RadioButton)?.isChecked =
+                        (styles.getChildAt(index) as? RadioButton)?.text == "Normal"
+                }
+            }
+        }
+        val close = Button(this).apply {
+            text = "CLOSE"
+            setOnClickListener { settings.visibility = android.view.View.GONE }
+        }
+        actions.addView(reset)
+        actions.addView(close)
+        settings.addView(actions)
+        root.addView(settings)
+
+        settingsButton.setOnClickListener {
+            settings.visibility =
+                if (settings.visibility == android.view.View.VISIBLE) android.view.View.GONE
+                else android.view.View.VISIBLE
+        }
+
+        val scroll = ScrollView(this).apply {
+            isFillViewport = true
+            addView(root)
         }
         val windowType = if (Build.VERSION.SDK_INT >= 26) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE
         val params = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT,
+            dp(300),
             WindowManager.LayoutParams.WRAP_CONTENT,
             windowType,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.END
-            x = 24
-            y = 180
+            x = dp(12)
+            y = dp(150)
         }
-        windowManager.addView(panel, params)
-        overlay = panel
+        windowManager.addView(scroll, params)
+        overlay = root
+        // Keep the ScrollView as the actual attached window's parent for clean removal.
+        root.tag = scroll
     }
 
     private fun createNotificationChannel() {
@@ -129,7 +246,9 @@ class OverlayCaptureService : Service() {
     }
 
     override fun onDestroy() {
-        overlay?.let { windowManager.removeView(it) }
+        overlay?.tag?.let { parent ->
+            if (parent is android.view.View) windowManager.removeView(parent)
+        }
         overlay = null
         projection?.stop()
         projection = null
