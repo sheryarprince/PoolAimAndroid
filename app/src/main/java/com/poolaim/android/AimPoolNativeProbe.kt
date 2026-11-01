@@ -16,7 +16,7 @@ object AimPoolNativeProbe {
         cached?.let { return it }
         val result = try {
             // Referencing the shim initializes its class and runs System.loadLibrary.
-            AimPool::class.java
+            Class.forName("com.team.aimpool.ai.team.ntpool.AimPool", true, AimPool::class.java.classLoader)
             Status(true, "libapool loaded; JNI shim class resolved")
         } catch (t: Throwable) {
             Log.e("AimPoolNative", "Native engine load failed", t)
