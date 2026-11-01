@@ -9,6 +9,7 @@ import android.os.HandlerThread
 import android.util.Log
 import java.nio.ByteBuffer
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 import android.graphics.drawable.GradientDrawable
 import android.hardware.display.DisplayManager
 import android.media.ImageReader
@@ -39,6 +40,8 @@ class OverlayCaptureService : Service() {
     @Volatile private var lastFrameNanos = 0L
     @Volatile private var analyzedFrames = 0L
     @Volatile private var hasLiveDetection = false
+    @Volatile private var latestAnalysis: FrameAnalyzer.Result? = null
+    private val analysisBusy = AtomicBoolean(false)
     private var guideParams: WindowManager.LayoutParams? = null
     private var aimOn = false
     private var editMode = false
@@ -81,11 +84,14 @@ class OverlayCaptureService : Service() {
                 if (now - lastFrameNanos >= 33_000_000L) {
                     lastFrameNanos = now
                     val bitmap = imageToBitmap(image)
-                    if (bitmap != null) {
+                    if (bitmap != null && analysisBusy.compareAndSet(false, true)) {
                         analysisExecutor.execute {
                             try {
                                 val result = frameAnalyzer.analyze(bitmap)
                                 if (result != null) {
+                                    latestAnalysis = result
+                                    hasLiveDetection = result.tableBounds != null && result.cueBall != null && result.balls.size >= 2
+                                    Handler(mainLooper).post { guide?.invalidate() }
                                     analyzedFrames++
                                     if (analyzedFrames % 60L == 0L) {
                                         Log.d("PoolAimCapture", "Preprocessed $analyzedFrames frames; latest=${result.processingTimeMs}ms")
@@ -93,8 +99,11 @@ class OverlayCaptureService : Service() {
                                 }
                             } finally {
                                 bitmap.recycle()
+                                analysisBusy.set(false)
                             }
                         }
+                    } else {
+                        bitmap?.recycle()
                     }
                 }
             } catch (t: Throwable) {
@@ -175,7 +184,7 @@ class OverlayCaptureService : Service() {
         }
         root.addView(styles)
         root.addView(TextView(this).apply {
-            text = "Automatic recognition is being built. Screen frames are processed locally with OpenCV; aiming lines stay hidden until real ball detections are available."
+            text = "Live OpenCV table and ball proposals are processed on-device. Guides appear only when a table, cue candidate and object balls are detected. A trained pool-specific AI model is a separate next milestone."
             textSize = 12f; setTextColor(Color.DKGRAY); setPadding(0, dp(6), 0, dp(6))
         })
         root.addView(Button(this).apply { text = "RESET POSITIONS"; setOnClickListener { guide?.resetPoints() } })
@@ -215,41 +224,96 @@ class OverlayCaptureService : Service() {
         fun resetPoints(){cue=PointF(.30f,.50f);obj=PointF(.68f,.50f);invalidate()}
         override fun onDraw(c:Canvas) {
             super.onDraw(c)
-            table.set(width*.045f,height*.16f,width*.955f,height*.84f)
-            if(!aimOn || !hasLiveDetection)return
-            val a=pt(cue); val b=pt(obj); val ps=pockets()
-            paint.style=Paint.Style.STROKE; paint.color=Color.WHITE; paint.strokeWidth=dp(2).toFloat()
-            c.drawRoundRect(table,radius,radius,paint)
-            ps.forEach { paint.color=Color.WHITE; paint.strokeWidth=1f; c.drawCircle(it.x,it.y,radius*1.15f,paint) }
-            if(pocketLines) ps.forEach { drawLine(c,b,it,0x88FFFFFF.toInt(),maxOf(1f,thickness*.5f)) }
-            val pocket=ps.minByOrNull{dist(b,it)} ?: ps.last()
-            if(singleLine) {
-                val dx=b.x-a.x; val dy=b.y-a.y; val len=hypot(dx,dy).coerceAtLeast(1f)
-                val ux=dx/len; val uy=dy/len
-                val ghost=PointF(b.x-ux*radius*2,b.y-uy*radius*2)
-                if(threeLines){drawLine(c,a,ghost,Color.CYAN);drawLine(c,ghost,b,Color.YELLOW);drawLine(c,b,pocket,Color.GREEN)}
-                else {drawLine(c,a,b,Color.CYAN);drawLine(c,b,pocket,Color.GREEN)}
-                if(autoLengthen) drawLine(c,b,PointF(b.x+ux*table.width(),b.y+uy*table.width()),0x88FFFF00.toInt(),maxOf(1f,thickness*.7f))
+            val result = latestAnalysis ?: return
+            val bounds = result.tableBounds ?: return
+            val sx = width.toFloat() / result.frameWidth.coerceAtLeast(1)
+            val sy = height.toFloat() / result.frameHeight.coerceAtLeast(1)
+            table.set(bounds.left * sx, bounds.top * sy, bounds.right * sx, bounds.bottom * sy)
+            if (!aimOn || !hasLiveDetection) return
+
+            val cue = result.cueBall ?: return
+            val cuePoint = PointF(cue.x * sx, cue.y * sy)
+            val viewRadius = cue.radius * ((sx + sy) * 0.5f)
+            val ps = pockets()
+            val objects = result.balls.filterNot { it.isCueBall }
+            if (objects.isEmpty()) return
+
+            paint.style = Paint.Style.STROKE
+            paint.color = Color.WHITE
+            paint.strokeWidth = dp(2).toFloat()
+            c.drawRoundRect(table, radius, radius, paint)
+            ps.forEach { p ->
+                paint.color = Color.WHITE
+                paint.strokeWidth = 1.5f
+                c.drawCircle(p.x, p.y, viewRadius * 1.25f, paint)
             }
-            if(bankLine||doubleBank) ps.forEach { target ->
-                var x=b.x; var y=b.y; var vx=target.x-b.x; var vy=target.y-b.y
-                repeat(if(doubleBank)2 else 1){ index ->
-                    val hits=mutableListOf<Pair<Float,Int>>()
-                    if(vx>0.0001f)hits.add(Pair((table.right-x)/vx,0))
-                    if(vx< -0.0001f)hits.add(Pair((table.left-x)/vx,0))
-                    if(vy>0.0001f)hits.add(Pair((table.bottom-y)/vy,1))
-                    if(vy< -0.0001f)hits.add(Pair((table.top-y)/vy,1))
-                    val hit=hits.filter{it.first>0.0001f}.minByOrNull{it.first} ?: return@repeat
-                    val end=PointF(x+vx*hit.first,y+vy*hit.first)
-                    if((index==0&&bankLine)||(index>0&&doubleBank))drawLine(c,PointF(x,y),end,if(index==0)Color.MAGENTA else Color.CYAN)
-                    if(hit.second==0)vx= -vx else vy= -vy
-                    x=end.x;y=end.y
+
+            objects.forEach { candidate ->
+                val p = PointF(candidate.x * sx, candidate.y * sy)
+                paint.style = Paint.Style.FILL
+                paint.color = 0xFFFFB52E.toInt()
+                c.drawCircle(p.x, p.y, viewRadius, paint)
+                if (ballEdges) {
+                    paint.style = Paint.Style.STROKE
+                    paint.strokeWidth = 2f
+                    paint.color = Color.WHITE
+                    c.drawCircle(p.x, p.y, viewRadius, paint)
                 }
             }
-            ball(c,a,Color.rgb(245,245,245)); ball(c,b,Color.rgb(235,175,40))
-            paint.style=Paint.Style.FILL;paint.color=Color.BLACK;paint.textSize=dp(10).toFloat()
-            c.drawText("CUE",a.x-dp(10),a.y+dp(4),paint);c.drawText("BALL",b.x-dp(12),b.y+dp(4),paint)
-            if(editMode){paint.style=Paint.Style.STROKE;paint.color=Color.BLUE;paint.strokeWidth=dp(2).toFloat();c.drawCircle(a.x,a.y,radius*1.7f,paint);c.drawCircle(b.x,b.y,radius*1.7f,paint)}
+            paint.style = Paint.Style.FILL
+            paint.color = Color.WHITE
+            c.drawCircle(cuePoint.x, cuePoint.y, viewRadius, paint)
+            paint.style = Paint.Style.STROKE
+            paint.color = Color.CYAN
+            paint.strokeWidth = 2f
+            c.drawCircle(cuePoint.x, cuePoint.y, viewRadius * 1.35f, paint)
+
+            data class CandidateShot(val cue: PointF, val ghost: PointF, val target: PointF, val pocket: PointF, val score: Float)
+            fun pointSegmentDistance(p: PointF, a: PointF, b: PointF): Float {
+                val dx = b.x - a.x
+                val dy = b.y - a.y
+                val denom = dx * dx + dy * dy
+                if (denom <= 0.001f) return hypot(p.x - a.x, p.y - a.y)
+                val t = (((p.x - a.x) * dx + (p.y - a.y) * dy) / denom).coerceIn(0f, 1f)
+                return hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy))
+            }
+
+            val shots = ArrayList<CandidateShot>()
+            for (targetCandidate in objects) {
+                val target = PointF(targetCandidate.x * sx, targetCandidate.y * sy)
+                for (pocket in ps) {
+                    val dx = pocket.x - target.x
+                    val dy = pocket.y - target.y
+                    val len = hypot(dx, dy).coerceAtLeast(1f)
+                    val ux = dx / len
+                    val uy = dy / len
+                    val contactDistance = (cue.radius + targetCandidate.radius) * ((sx + sy) * 0.5f)
+                    val ghost = PointF(target.x - ux * contactDistance, target.y - uy * contactDistance)
+                    val blocked = objects.any { other ->
+                        if (other === targetCandidate) false else {
+                            val op = PointF(other.x * sx, other.y * sy)
+                            pointSegmentDistance(op, cuePoint, ghost) < viewRadius * 1.85f ||
+                                pointSegmentDistance(op, target, pocket) < viewRadius * 1.85f
+                        }
+                    }
+                    if (blocked) continue
+                    val cueDistance = hypot(ghost.x - cuePoint.x, ghost.y - cuePoint.y)
+                    val score = cueDistance + len * 0.55f
+                    shots.add(CandidateShot(cuePoint, ghost, target, pocket, score))
+                }
+            }
+            val best = shots.minByOrNull { it.score }
+            if (best != null) {
+                drawLine(c, best.cue, best.ghost, Color.CYAN, thickness)
+                drawLine(c, best.ghost, best.target, Color.YELLOW, thickness)
+                drawLine(c, best.target, best.pocket, Color.GREEN, thickness)
+                if (pocketLines) ps.forEach { drawLine(c, best.target, it, 0x44FFFFFF, maxOf(1f, thickness * .45f)) }
+            }
+
+            paint.style = Paint.Style.FILL
+            paint.color = Color.WHITE
+            paint.textSize = dp(11).toFloat()
+            c.drawText("CV: ${result.balls.size} balls", table.left, table.top - dp(7).toFloat(), paint)
         }
         override fun onTouchEvent(e:MotionEvent):Boolean {
             if(!editMode)return false
