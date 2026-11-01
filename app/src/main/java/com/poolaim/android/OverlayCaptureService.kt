@@ -19,6 +19,7 @@ import android.os.Build
 import android.os.IBinder
 import android.view.*
 import android.widget.*
+import kotlin.math.acos
 import kotlin.math.hypot
 import kotlin.math.min
 
@@ -265,8 +266,12 @@ class OverlayCaptureService : Service() {
                         }
                     }
                     if (blocked) continue
-                    val cueDistance = hypot(ghost.x - cuePoint.x, ghost.y - cuePoint.y)
-                    val score = cueDistance + len * 0.55f
+                    val cueDx = ghost.x - cuePoint.x
+                    val cueDy = ghost.y - cuePoint.y
+                    val cueDistance = hypot(cueDx, cueDy).coerceAtLeast(1f)
+                    val alignment = ((cueDx * dx + cueDy * dy) / (cueDistance * len)).coerceIn(-1f, 1f)
+                    val cutAngle = acos(alignment)
+                    val score = cueDistance + len * 0.55f + cutAngle * viewRadius * 2.2f
                     shots.add(CandidateShot(cuePoint, ghost, target, pocket, score))
                 }
             }
