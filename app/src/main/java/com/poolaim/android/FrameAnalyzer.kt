@@ -22,7 +22,8 @@ import kotlin.math.roundToInt
 
 /** OpenCV table/ball proposal stage. A pool-specific trained model can refine these proposals later. */
 class FrameAnalyzer {
-    data class BallCandidate(val x: Float, val y: Float, val radius: Float, val confidence: Float, val isCueBall: Boolean = false)
+    enum class BallKind { CUE, EIGHT, STRIPE, SOLID, UNKNOWN }
+    data class BallCandidate(val x: Float, val y: Float, val radius: Float, val confidence: Float, val isCueBall: Boolean = false, val kind: BallKind = BallKind.UNKNOWN, val appearanceConfidence: Float = 0f)
     data class Result(
         val frameWidth: Int, val frameHeight: Int,
         val processingWidth: Int, val processingHeight: Int,
@@ -32,6 +33,7 @@ class FrameAnalyzer {
 
     private val initialized = OpenCVLoader.initLocal()
     private var previousBalls: List<BallCandidate> = emptyList()
+    private var previousCue: BallCandidate? = null
     private val trackingAlpha = 0.68f
     fun isReady() = initialized
 
@@ -126,31 +128,22 @@ class FrameAnalyzer {
             }
 
             val trackedProposals = smoothCandidates(proposals)
-            val whiteCandidates = trackedProposals.mapNotNull { candidate ->
-                val x = (candidate.x / bitmap.width * hsv.cols()).roundToInt().coerceIn(0, hsv.cols() - 1)
-                val y = (candidate.y / bitmap.height * hsv.rows()).roundToInt().coerceIn(0, hsv.rows() - 1)
-                val r = max(2, (candidate.radius / bitmap.width * hsv.cols() * 0.55f).roundToInt())
-                val mask = Mat.zeros(hsv.rows(), hsv.cols(), CvType.CV_8UC1)
-                Imgproc.circle(mask, org.opencv.core.Point(x.toDouble(), y.toDouble()), r, Scalar(255.0), -1)
-                val mean = MatOfDouble()
-                val stddev = MatOfDouble()
-                Core.meanStdDev(hsv, mean, stddev, mask)
-                mask.release()
-                val m = mean.toArray()
-                val sd = stddev.toArray()
-                mean.release(); stddev.release()
-                val saturation = m[1]
-                val value = m[2]
-                val saturationSpread = sd[1]
-                // The cue ball should be uniformly white. A striped ball can
-                // have a bright, low-saturation patch, so penalize saturation
-                // variation strongly and reject non-uniform candidates.
-                if (saturation < 48.0 && value > 140.0 && saturationSpread < 32.0)
-                    candidate to (value - saturation * 0.6 - saturationSpread * 2.5)
-                else null
+            val classified = trackedProposals.map { classifyAppearance(it, hsv, bitmap.width, bitmap.height) }
+            // A modest temporal prior prevents a bright stripe from stealing cue identity.
+            val whiteCandidates = classified.filter { it.kind == BallKind.CUE }.map { candidate ->
+                val prior = previousCue?.let {
+                    val distance = hypot(candidate.x - it.x, candidate.y - it.y)
+                    (distance / max(1f, candidate.radius * 8f)).coerceAtMost(1f) * 18f
+                } ?: 0f
+                candidate to (candidate.appearanceConfidence * 100f - prior)
             }
             val cue = whiteCandidates.maxByOrNull { it.second }?.first
-            val finalBalls = trackedProposals.map { if (it == cue) it.copy(isCueBall = true) else it }
+            previousCue = cue
+            val finalBalls = classified.map { candidate ->
+                if (cue != null && candidate.x == cue.x && candidate.y == cue.y)
+                    candidate.copy(isCueBall = true, kind = BallKind.CUE)
+                else candidate.copy(isCueBall = false)
+            }
             val edgePixels = Core.countNonZero(edges)
             val totalPixels = max(1, edges.rows() * edges.cols())
             return Result(bitmap.width, bitmap.height, outWidth, outHeight, table, finalBalls, cue,
@@ -165,6 +158,50 @@ class FrameAnalyzer {
         }
     }
 
+    /** Inner-disk and outer-ring appearance features for basic pool-ball classification. */
+    private fun classifyAppearance(ball: BallCandidate, hsv: Mat, frameWidth: Int, frameHeight: Int): BallCandidate {
+        val x = (ball.x / frameWidth * hsv.cols()).roundToInt().coerceIn(0, hsv.cols() - 1)
+        val y = (ball.y / frameHeight * hsv.rows()).roundToInt().coerceIn(0, hsv.rows() - 1)
+        val radius = max(3, (ball.radius / frameWidth * hsv.cols()).roundToInt())
+        val inner = Mat.zeros(hsv.rows(), hsv.cols(), CvType.CV_8UC1)
+        val ring = Mat.zeros(hsv.rows(), hsv.cols(), CvType.CV_8UC1)
+        val full = Mat.zeros(hsv.rows(), hsv.cols(), CvType.CV_8UC1)
+        val center = org.opencv.core.Point(x.toDouble(), y.toDouble())
+        Imgproc.circle(inner, center, max(2, (radius * 0.36f).roundToInt()), Scalar(255.0), -1)
+        Imgproc.circle(ring, center, max(3, (radius * 0.88f).roundToInt()), Scalar(255.0), -1)
+        Imgproc.circle(ring, center, max(2, (radius * 0.48f).roundToInt()), Scalar(0.0), -1)
+        Imgproc.circle(full, center, max(3, (radius * 0.78f).roundToInt()), Scalar(255.0), -1)
+        try {
+            val innerScalar = Core.mean(hsv, inner)
+            val ringScalar = Core.mean(hsv, ring)
+            val mean = MatOfDouble()
+            val deviation = MatOfDouble()
+            Core.meanStdDev(hsv, mean, deviation, full)
+            val sd = deviation.toArray()
+            mean.release()
+            deviation.release()
+            val sat = innerScalar.`val`[1]
+            val value = innerScalar.`val`[2]
+            val ringSat = ringScalar.`val`[1]
+            val satSpread = sd[1]
+            val valueSpread = sd[2]
+            val contrast = kotlin.math.abs(sat - ringSat)
+            val classified = when {
+                value < 72.0 -> BallKind.EIGHT to ((72.0 - value) / 72.0).toFloat().coerceIn(0.25f, 0.95f)
+                sat < 45.0 && value > 145.0 && satSpread < 34.0 && valueSpread < 62.0 ->
+                    BallKind.CUE to ((1.0 - sat / 90.0) * (value / 255.0) * (1.0 - satSpread / 90.0)).toFloat().coerceIn(0.2f, 0.99f)
+                contrast > 25.0 && (ringSat < sat * 0.62 || sat < ringSat * 0.62) ->
+                    BallKind.STRIPE to (contrast / 90.0).toFloat().coerceIn(0.25f, 0.9f)
+                sat > 45.0 -> BallKind.SOLID to (sat / 180.0).toFloat().coerceIn(0.2f, 0.85f)
+                else -> BallKind.UNKNOWN to 0.25f
+            }
+            return ball.copy(kind = classified.first, appearanceConfidence = classified.second)
+        } finally {
+            inner.release()
+            ring.release()
+            full.release()
+        }
+    }
     /** Greedy nearest-neighbour association with exponential smoothing. */
     private fun smoothCandidates(current: List<BallCandidate>): List<BallCandidate> {
         val unmatched = previousBalls.toMutableList()
