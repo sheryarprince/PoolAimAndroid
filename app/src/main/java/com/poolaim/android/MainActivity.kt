@@ -23,7 +23,7 @@ class MainActivity : Activity() {
             setPadding(36, 48, 36, 36)
         }
         layout.addView(TextView(this).apply {
-            text = "Pool Aim Overlay\n\nThis starter app requests screen-capture permission and displays a movable floating ON/OFF control. Screen capture is processed locally on your device."
+            text = "Pool Aim Overlay\\n\\nThis starter app requests screen-capture permission and displays a movable floating ON/OFF control. Screen capture is processed locally on your device.\\n\\nAimPool native test: " + AimPoolNativeProbe.check().detail
             textSize = 18f
         })
         layout.addView(Button(this).apply {
