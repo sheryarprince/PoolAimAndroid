@@ -26,6 +26,7 @@ class OverlayCaptureService : Service() {
     private lateinit var wm: WindowManager
     private var guide: GuideView? = null
     private var panel: LinearLayout? = null
+    private var miniBubble: TextView? = null
     private var guideParams: WindowManager.LayoutParams? = null
     private var aimOn = true
     private var editMode = false
@@ -121,7 +122,7 @@ class OverlayCaptureService : Service() {
             textSize = 12f; setTextColor(Color.DKGRAY); setPadding(0, dp(6), 0, dp(6))
         })
         root.addView(Button(this).apply { text = "RESET POSITIONS"; setOnClickListener { guide?.resetPoints() } })
-        root.addView(Button(this).apply { text = "HIDE PANEL"; setOnClickListener { root.visibility = View.GONE } })
+        root.addView(Button(this).apply { text = "MINIMIZE"; setOnClickListener { root.visibility = View.GONE; showMiniBubble() } })
         val type = if (Build.VERSION.SDK_INT >= 26) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE
         val lp = WindowManager.LayoutParams(dp(310), WindowManager.LayoutParams.WRAP_CONTENT, type,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN, PixelFormat.TRANSLUCENT)
@@ -215,7 +216,8 @@ class OverlayCaptureService : Service() {
     override fun onDestroy() {
         try{guide?.let{wm.removeView(it)}}catch(_:Exception){}
         try{panel?.let{wm.removeView(it)}}catch(_:Exception){}
-        guide=null;panel=null;projection?.stop();projection=null;reader?.close();reader=null
+        try{miniBubble?.let{wm.removeView(it)}}catch(_:Exception){}
+        guide=null;panel=null;miniBubble=null;projection?.stop();projection=null;reader?.close();reader=null
         super.onDestroy()
     }
     override fun onBind(intent:Intent?):IBinder?=null
