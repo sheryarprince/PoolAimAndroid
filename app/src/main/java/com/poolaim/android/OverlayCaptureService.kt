@@ -42,6 +42,8 @@ class OverlayCaptureService : Service() {
     @Volatile private var analyzedFrames = 0L
     @Volatile private var hasLiveDetection = false
     @Volatile private var latestAnalysis: FrameAnalyzer.Result? = null
+    @Volatile private var lastGoodDetectionNanos = 0L
+    private val detectionGraceNanos = 450_000_000L
     private val analysisBusy = AtomicBoolean(false)
     private var aimOn = false
     private var pocketLines = true
@@ -83,12 +85,23 @@ class OverlayCaptureService : Service() {
                             try {
                                 val result = frameAnalyzer.analyze(bitmap)
                                 if (result != null) {
-                                    latestAnalysis = result
-                                    hasLiveDetection = result.tableBounds != null && result.cueBall != null && result.balls.size >= 2
+                                    val valid = result.tableBounds != null &&
+                                        result.cueBall != null && result.balls.size >= 2
+                                    val nowNanos = System.nanoTime()
+                                    if (valid) {
+                                        latestAnalysis = result
+                                        lastGoodDetectionNanos = nowNanos
+                                        hasLiveDetection = true
+                                    } else {
+                                        // Keep the last reliable overlay briefly instead of
+                                        // blinking off on a single missed/partial frame.
+                                        hasLiveDetection =
+                                            nowNanos - lastGoodDetectionNanos <= detectionGraceNanos
+                                    }
                                     Handler(mainLooper).post { guide?.invalidate() }
                                     analyzedFrames++
                                     if (analyzedFrames % 60L == 0L) {
-                                        Log.d("PoolAimCapture", "Preprocessed $analyzedFrames frames; latest=${result.processingTimeMs}ms")
+                                        Log.d("PoolAimCapture", "Preprocessed $analyzedFrames frames; latest=${result.processingTimeMs}ms; valid=$valid")
                                     }
                                 }
                             } finally {
