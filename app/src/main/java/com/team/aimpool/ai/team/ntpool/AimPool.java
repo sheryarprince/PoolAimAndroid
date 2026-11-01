@@ -1,11 +1,11 @@
 package com.team.aimpool.ai.team.ntpool;
 
 /**
- * JNI facade reconstructed from the authorized AimPool APK's DEX signatures.
- * Native methods are static and registered by libapool during JNI_OnLoad.
+ * JNI signatures recovered from the supplied AimPool APK DEX metadata.
+ * Declaration reference only; the original protected runtime's native
+ * initialization and registration have not been reproduced here.
  */
 public final class AimPool {
-    static { System.loadLibrary("apool"); }
     private AimPool() {}
 
     public static native Object findAimPoollyInfo(String sceneHandle);
