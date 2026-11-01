@@ -158,25 +158,31 @@ class FrameAnalyzer {
         }
     }
 
-    /** Inner-disk and outer-ring appearance features for basic pool-ball classification. */
+    /** Inner-disk and outer-ring appearance features using a tiny per-ball ROI. */
     private fun classifyAppearance(ball: BallCandidate, hsv: Mat, frameWidth: Int, frameHeight: Int): BallCandidate {
         val x = (ball.x / frameWidth * hsv.cols()).roundToInt().coerceIn(0, hsv.cols() - 1)
         val y = (ball.y / frameHeight * hsv.rows()).roundToInt().coerceIn(0, hsv.rows() - 1)
         val radius = max(3, (ball.radius / frameWidth * hsv.cols()).roundToInt())
-        val inner = Mat.zeros(hsv.rows(), hsv.cols(), CvType.CV_8UC1)
-        val ring = Mat.zeros(hsv.rows(), hsv.cols(), CvType.CV_8UC1)
-        val full = Mat.zeros(hsv.rows(), hsv.cols(), CvType.CV_8UC1)
-        val center = org.opencv.core.Point(x.toDouble(), y.toDouble())
-        Imgproc.circle(inner, center, max(2, (radius * 0.36f).roundToInt()), Scalar(255.0), -1)
-        Imgproc.circle(ring, center, max(3, (radius * 0.88f).roundToInt()), Scalar(255.0), -1)
-        Imgproc.circle(ring, center, max(2, (radius * 0.48f).roundToInt()), Scalar(0.0), -1)
-        Imgproc.circle(full, center, max(3, (radius * 0.78f).roundToInt()), Scalar(255.0), -1)
+        val left = (x - radius).coerceAtLeast(0)
+        val top = (y - radius).coerceAtLeast(0)
+        val right = (x + radius + 1).coerceAtMost(hsv.cols())
+        val bottom = (y + radius + 1).coerceAtMost(hsv.rows())
+        val roi = hsv.submat(top, bottom, left, right)
+        val inner = Mat.zeros(roi.rows(), roi.cols(), CvType.CV_8UC1)
+        val ring = Mat.zeros(roi.rows(), roi.cols(), CvType.CV_8UC1)
+        val full = Mat.zeros(roi.rows(), roi.cols(), CvType.CV_8UC1)
+        val localRadius = min(radius, min(roi.cols(), roi.rows()) / 2 - 1).coerceAtLeast(2)
+        val center = org.opencv.core.Point((x - left).toDouble(), (y - top).toDouble())
+        Imgproc.circle(inner, center, max(2, (localRadius * 0.36f).roundToInt()), Scalar(255.0), -1)
+        Imgproc.circle(ring, center, max(3, (localRadius * 0.88f).roundToInt()), Scalar(255.0), -1)
+        Imgproc.circle(ring, center, max(2, (localRadius * 0.48f).roundToInt()), Scalar(0.0), -1)
+        Imgproc.circle(full, center, max(3, (localRadius * 0.78f).roundToInt()), Scalar(255.0), -1)
         try {
-            val innerScalar = Core.mean(hsv, inner)
-            val ringScalar = Core.mean(hsv, ring)
+            val innerScalar = Core.mean(roi, inner)
+            val ringScalar = Core.mean(roi, ring)
             val mean = MatOfDouble()
             val deviation = MatOfDouble()
-            Core.meanStdDev(hsv, mean, deviation, full)
+            Core.meanStdDev(roi, mean, deviation, full)
             val sd = deviation.toArray()
             mean.release()
             deviation.release()
@@ -200,6 +206,7 @@ class FrameAnalyzer {
             inner.release()
             ring.release()
             full.release()
+            roi.release()
         }
     }
     /** Greedy nearest-neighbour association with exponential smoothing. */
