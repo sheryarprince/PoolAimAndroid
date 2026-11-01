@@ -148,7 +148,6 @@ class OverlayCaptureService : Service() {
             LinearLayout.LayoutParams(0, dp(44), 1f))
         head.addView(Button(this).apply { text = "AIM: ON"; setOnClickListener { aimOn = !aimOn; text = if (aimOn) "AIM: ON" else "AIM: OFF"; guide?.invalidate() } })
         root.addView(head)
-        root.addView(section("Guideline Settings"))
         root.addView(section("Live Detection Display"))
         switch(root, "Show pocket reference lines", true) { pocketLines = it; guide?.invalidate() }
         switch(root, "Show ball outlines", true) { ballEdges = it; guide?.invalidate() }
