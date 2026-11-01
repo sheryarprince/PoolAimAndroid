@@ -261,7 +261,7 @@ class OverlayCaptureService : Service() {
             paint.color = Color.WHITE
             paint.strokeWidth = dp(2).toFloat()
             c.drawRoundRect(table, radius, radius, paint)
-            ps.forEach { p ->
+            ps?.forEach { p ->
                 paint.color = Color.WHITE
                 paint.strokeWidth = 1.5f
                 c.drawCircle(p.x, p.y, viewRadius * 1.25f, paint)
