@@ -8,16 +8,16 @@ Native Android floating practice-guidance overlay for pool games.
 - Kotlin + MediaProjection screen capture.
 - OpenCV 4.10 Android library.
 - Local table-colour segmentation and Hough-circle proposals.
-- Cue-ball candidate ranking, ball markers, ghost-ball contact geometry and direct-shot obstruction checks.
+- Inner-disk/outer-ring appearance classification for cue, 8-ball, stripe and solid candidates; temporal cue identity prior; ghost-ball geometry, direct-shot obstruction checks and one-cushion bank-shot proposals.
 - Floating AIM toggle, minimize/reopen control and overlay style controls.
 - Six-pocket tap calibration saved locally in normalized screen coordinates; shot guides are suppressed until pockets are calibrated.
 - Screen frames remain on-device.
 
 ## Current recognition limits
 
-This is an early computer-vision prototype, not a finished Easy Victory/Cheto replacement. OpenCV currently proposes the table region and circular ball candidates. It can confuse striped balls with the cue ball, miss balls under occlusion, or fail on different table skins. The overlay suppresses the guide when it cannot find a plausible cue ball and at least one object ball.
+This is an early computer-vision prototype, not a finished AimPool/Easy Victory/Cheto replacement. OpenCV currently proposes the table region and circular ball candidates. It can confuse striped balls with the cue ball, miss balls under occlusion, or fail on different table skins. The overlay suppresses the guide when it cannot find a plausible cue ball and at least one object ball.
 
-There is **no trained pool-specific AI model bundled yet**. A reliable hybrid AI + OpenCV release requires a labelled dataset from multiple table skins, screen sizes, orientations and lighting conditions, followed by model training and on-device evaluation. The current 20–30 FPS rate is a processing target, not a verified device benchmark.
+The ball labels currently use classical HSV appearance heuristics and are not guaranteed ground-truth classes. There is **no trained pool-specific AI model bundled yet**. A reliable hybrid AI + OpenCV release requires a labelled dataset from multiple table skins, screen sizes, orientations and lighting conditions, followed by model training and on-device evaluation. The current 20–30 FPS rate is a processing target, not a verified device benchmark.
 
 ## Build
 
