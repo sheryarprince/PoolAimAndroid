@@ -95,9 +95,9 @@ class FrameAnalyzer {
                     Imgproc.circle(sampleMask, org.opencv.core.Point(hx.toDouble(), hy.toDouble()), hr, Scalar(255.0), -1)
                     val mean = Core.mean(hsv, sampleMask)
                     sampleMask.release()
-                    val hue = mean.\`val\`[0]
-                    val saturation = mean.\`val\`[1]
-                    val value = mean.\`val\`[2]
+                    val hue = mean.`val`[0]
+                    val saturation = mean.`val`[1]
+                    val value = mean.`val`[2]
                     if (hue in 72.0..122.0 && saturation > 45.0 && value > 45.0) continue
                     if (value < 18.0) continue
                     proposals.add(BallCandidate(cx, cy, radius, if (saturation < 55.0 && value > 155.0) 0.78f else 0.66f))
