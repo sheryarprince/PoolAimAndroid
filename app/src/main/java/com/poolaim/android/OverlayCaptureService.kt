@@ -9,6 +9,7 @@ import android.graphics.PixelFormat
 import android.media.ImageReader
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
+import android.hardware.display.DisplayManager
 import android.os.Build
 import android.os.IBinder
 import android.view.Gravity
@@ -63,9 +64,13 @@ class OverlayCaptureService : Service() {
                 stopSelf()
             }
         }, null)
+        reader?.setOnImageAvailableListener({ source ->
+            val frame = source.acquireLatestImage()
+            frame?.close()
+        }, null)
         projection?.createVirtualDisplay(
             "PoolAimScreenCapture", width, height, metrics.densityDpi,
-            0, reader?.surface, null, null
+            DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, reader?.surface, null, null
         )
         // Capture permission is user-controlled. Frames remain on-device; no network upload is implemented.
     }
@@ -83,11 +88,11 @@ class OverlayCaptureService : Service() {
             orientation = LinearLayout.VERTICAL
             addView(toggle)
         }
+        val windowType = if (Build.VERSION.SDK_INT >= 26) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
-            if (Build.VERSION.SDK_INT >= 26) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-            else @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE,
+            windowType,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
         ).apply {
