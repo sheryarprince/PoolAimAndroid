@@ -49,6 +49,8 @@ class OverlayCaptureService : Service() {
     private var pocketLines = true
     private var ballEdges = true
     private var thickness = 3f
+    private val calibrationStore by lazy { PocketCalibrationStore(this) }
+    private var calibrationOverlay: CalibrationView? = null
 
     override fun onCreate() { super.onCreate(); wm = getSystemService(WINDOW_SERVICE) as WindowManager; makeChannel() }
 
@@ -165,6 +167,7 @@ class OverlayCaptureService : Service() {
         root.addView(section("Live Detection Display"))
         switch(root, "Show pocket reference lines", true) { pocketLines = it; guide?.invalidate() }
         switch(root, "Show ball outlines", true) { ballEdges = it; guide?.invalidate() }
+        root.addView(Button(this).apply { text = if (calibrationStore.load() == null) "CALIBRATE 6 POCKETS" else "RECALIBRATE POCKETS"; setOnClickListener { startPocketCalibration() } })
         root.addView(section("Guideline Style"))
         val styles = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         listOf("Thin", "Normal", "Thick").forEachIndexed { i, s ->
@@ -229,8 +232,7 @@ class OverlayCaptureService : Service() {
         private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
         private val table = RectF()
         private val radius get() = min(width,height)*.014f
-        private fun pockets() = listOf(PointF(table.left,table.top),PointF(table.centerX(),table.top),PointF(table.right,table.top),
-            PointF(table.left,table.bottom),PointF(table.centerX(),table.bottom),PointF(table.right,table.bottom))
+        private fun pockets(): List<PointF>? = calibrationStore.load()?.map { PointF(it.x * width, it.y * height) }
         private fun drawLine(c:Canvas,a:PointF,b:PointF,color:Int,w:Float=thickness) {
             paint.color=color; paint.strokeWidth=w; paint.style=Paint.Style.STROKE; paint.strokeCap=Paint.Cap.ROUND
             c.drawLine(a.x,a.y,b.x,b.y,paint)
@@ -254,6 +256,16 @@ class OverlayCaptureService : Service() {
             val ps = pockets()
             val objects = result.balls.filterNot { it.isCueBall }
             if (objects.isEmpty()) return
+
+            // Never invent pocket positions from the table rectangle. Require
+            // a user calibration before drawing any shot or pocket reference lines.
+            if (ps == null || ps.size != 6) {
+                paint.style = Paint.Style.FILL
+                paint.color = Color.WHITE
+                paint.textSize = dp(12).toFloat()
+                c.drawText("Tap CALIBRATE 6 POCKETS", table.left, table.top - dp(7).toFloat(), paint)
+                return
+            }
 
             paint.style = Paint.Style.STROKE
             paint.color = Color.WHITE
@@ -338,6 +350,93 @@ class OverlayCaptureService : Service() {
         }
     }
 
+    private fun startPocketCalibration() {
+        if (calibrationOverlay != null) return
+        val view = CalibrationView()
+        val type = if (Build.VERSION.SDK_INT >= 26) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE
+        val lp = WindowManager.LayoutParams(
+            -1, -1, type,
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            PixelFormat.TRANSLUCENT
+        )
+        lp.gravity = Gravity.TOP or Gravity.START
+        try {
+            wm.addView(view, lp)
+            calibrationOverlay = view
+        } catch (t: Throwable) {
+            Log.e("PoolAimCalibration", "Unable to show calibration overlay", t)
+        }
+    }
+
+    /** Touch-through is intentionally disabled during calibration so pocket taps are captured. */
+    private inner class CalibrationView : View(this@OverlayCaptureService) {
+        private val points = ArrayList<PointF>(6)
+        private val names = listOf("Top-left", "Top-middle", "Top-right", "Bottom-right", "Bottom-middle", "Bottom-left")
+        private val p = Paint(Paint.ANTI_ALIAS_FLAG)
+
+        override fun onDraw(canvas: Canvas) {
+            super.onDraw(canvas)
+            canvas.drawColor(0x99000000.toInt())
+            p.color = Color.WHITE
+            p.textAlign = Paint.Align.CENTER
+            p.textSize = dp(18).toFloat()
+            canvas.drawText("POCKET CALIBRATION", width / 2f, dp(54).toFloat(), p)
+            p.textSize = dp(14).toFloat()
+            val next = points.size.coerceAtMost(5)
+            canvas.drawText(
+                if (points.size < 6) "Tap ${names[next]} pocket  (${points.size + 1}/6)" else "Calibration saved",
+                width / 2f, dp(82).toFloat(), p
+            )
+            points.forEachIndexed { i, point ->
+                val x = point.x * width
+                val y = point.y * height
+                p.style = Paint.Style.STROKE
+                p.strokeWidth = dp(3).toFloat()
+                p.color = Color.CYAN
+                canvas.drawCircle(x, y, dp(17).toFloat(), p)
+                p.style = Paint.Style.FILL
+                p.textSize = dp(13).toFloat()
+                canvas.drawText((i + 1).toString(), x, y - dp(24).toFloat(), p)
+            }
+            p.textSize = dp(12).toFloat()
+            p.color = Color.WHITE
+            canvas.drawText("Tap the centre of each pocket in order. Tap here to cancel.", width / 2f, height - dp(28).toFloat(), p)
+        }
+
+        override fun onTouchEvent(event: android.view.MotionEvent): Boolean {
+            if (event.action != android.view.MotionEvent.ACTION_UP) return true
+            if (event.y < dp(105) || event.y > height - dp(55)) {
+                cancelCalibration()
+                return true
+            }
+            points.add(PointF((event.x / width).coerceIn(0f, 1f), (event.y / height).coerceIn(0f, 1f)))
+            if (points.size == 6) {
+                calibrationStore.save(points)
+                finishCalibration()
+            } else invalidate()
+            return true
+        }
+    }
+
+    private fun finishCalibration() {
+        val view = calibrationOverlay ?: return
+        try { wm.removeView(view) } catch (_: Exception) {}
+        calibrationOverlay = null
+        guide?.invalidate()
+        panel?.let { root ->
+            val button = (0 until root.childCount).map { root.getChildAt(it) }
+                .filterIsInstance<Button>().firstOrNull { it.text.toString().contains("CALIBRATE") || it.text.toString().contains("RECALIBRATE") }
+            button?.text = "RECALIBRATE POCKETS"
+        }
+        Toast.makeText(this, "Six pockets calibrated", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun cancelCalibration() {
+        val view = calibrationOverlay ?: return
+        try { wm.removeView(view) } catch (_: Exception) {}
+        calibrationOverlay = null
+    }
+
     private fun makeChannel() {
         if(Build.VERSION.SDK_INT>=26){val ch=NotificationChannel(CHANNEL_ID,"Screen capture",NotificationManager.IMPORTANCE_LOW);getSystemService(NotificationManager::class.java).createNotificationChannel(ch)}
     }
@@ -349,6 +448,8 @@ class OverlayCaptureService : Service() {
         try{guide?.let{wm.removeView(it)}}catch(_:Exception){}
         try{panel?.let{wm.removeView(it)}}catch(_:Exception){}
         try{miniBubble?.let{wm.removeView(it)}}catch(_:Exception){}
+        try { calibrationOverlay?.let { wm.removeView(it) } } catch (_: Exception) {}
+        calibrationOverlay=null
         guide=null;panel=null;miniBubble=null
         projection?.stop();projection=null
         reader?.close();reader=null
