@@ -270,7 +270,13 @@ class OverlayCaptureService : Service() {
             objects.forEach { candidate ->
                 val p = PointF(candidate.x * sx, candidate.y * sy)
                 paint.style = Paint.Style.FILL
-                paint.color = 0xFFFFB52E.toInt()
+                paint.color = when (candidate.kind) {
+                    FrameAnalyzer.BallKind.EIGHT -> Color.BLACK
+                    FrameAnalyzer.BallKind.STRIPE -> 0xFF4DA3FF.toInt()
+                    FrameAnalyzer.BallKind.SOLID -> 0xFFFFB52E.toInt()
+                    FrameAnalyzer.BallKind.CUE -> Color.WHITE
+                    FrameAnalyzer.BallKind.UNKNOWN -> 0xFFFFB52E.toInt()
+                }
                 c.drawCircle(p.x, p.y, viewRadius, paint)
                 if (ballEdges) {
                     paint.style = Paint.Style.STROKE
@@ -326,11 +332,14 @@ class OverlayCaptureService : Service() {
                         }
                     }
                     if (blocked) continue
+                    // Extremely thin cut angles are unreliable with noisy ball centres.
                     val cueDx = ghost.x - cuePoint.x
                     val cueDy = ghost.y - cuePoint.y
                     val cueDistance = hypot(cueDx, cueDy).coerceAtLeast(1f)
                     val alignment = ((cueDx * dx + cueDy * dy) / (cueDistance * len)).coerceIn(-1f, 1f)
                     val cutAngle = acos(alignment)
+                    if (cutAngle > Math.toRadians(78.0).toFloat()) continue
+                    if (targetCandidate.confidence < 0.45f || cue.confidence < 0.45f) continue
                     val score = cueDistance + len * 0.55f + cutAngle * viewRadius * 2.2f
                     shots.add(CandidateShot(cuePoint, ghost, target, pocket, score))
                 }
@@ -346,7 +355,12 @@ class OverlayCaptureService : Service() {
             paint.style = Paint.Style.FILL
             paint.color = Color.WHITE
             paint.textSize = dp(11).toFloat()
-            c.drawText("CV: ${result.balls.size} balls", table.left, table.top - dp(7).toFloat(), paint)
+            val cueQuality = (cue.appearanceConfidence * 100f).toInt()
+            val classCounts = result.balls.groupingBy { it.kind }.eachCount()
+            c.drawText(
+                "CV ${result.balls.size} | cue ${cueQuality}% | 8:${classCounts[FrameAnalyzer.BallKind.EIGHT] ?: 0} S:${classCounts[FrameAnalyzer.BallKind.STRIPE] ?: 0}",
+                table.left, table.top - dp(7).toFloat(), paint
+            )
         }
     }
 
