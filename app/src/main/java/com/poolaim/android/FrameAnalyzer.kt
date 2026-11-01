@@ -56,7 +56,17 @@ class FrameAnalyzer {
             Imgproc.GaussianBlur(small, small, Size(5.0, 5.0), 0.0)
             Imgproc.Canny(small, edges, 60.0, 140.0)
 
-            Core.inRange(hsv, Scalar(68.0, 45.0, 80.0), Scalar(118.0, 255.0, 255.0), feltMask)
+            // Pool-table cloth is not always green. Build a broad chromatic cloth
+            // proposal mask, then use contour geometry to reject unrelated regions.
+            val greenBlue = Mat()
+            val redLow = Mat()
+            val redHigh = Mat()
+            Core.inRange(hsv, Scalar(28.0, 38.0, 38.0), Scalar(142.0, 255.0, 255.0), greenBlue)
+            Core.inRange(hsv, Scalar(0.0, 42.0, 35.0), Scalar(12.0, 255.0, 255.0), redLow)
+            Core.inRange(hsv, Scalar(168.0, 42.0, 35.0), Scalar(180.0, 255.0, 255.0), redHigh)
+            Core.bitwise_or(greenBlue, redLow, feltMask)
+            Core.bitwise_or(feltMask, redHigh, feltMask)
+            greenBlue.release(); redLow.release(); redHigh.release()
             val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_ELLIPSE, Size(17.0, 17.0))
             Imgproc.morphologyEx(feltMask, feltMask, Imgproc.MORPH_CLOSE, kernel)
             kernel.release()
@@ -65,19 +75,25 @@ class FrameAnalyzer {
             contourInput.release()
 
             var table: RectF? = null
-            val largest = contours.maxByOrNull { Imgproc.contourArea(it) }
-            // feltMask and its contours are in ORIGINAL screenshot coordinates.
-            // Do not scale these bounds by the downsample factor: only the grayscale
-            // image used for HoughCircles is downsampled.
-            if (largest != null && Imgproc.contourArea(largest) > bitmap.width * bitmap.height * 0.07) {
-                val r = Imgproc.boundingRect(largest)
-                val aspect = r.width.toFloat() / r.height.coerceAtLeast(1)
-                if (aspect in 1.15f..2.8f) {
-                    table = RectF(
-                        r.x.toFloat(), r.y.toFloat(),
-                        (r.x + r.width).toFloat(), (r.y + r.height).toFloat()
-                    )
+            // Select the strongest geometrically plausible cloth region.
+            val minTableArea = bitmap.width.toDouble() * bitmap.height * 0.07
+            val tableContour = contours.asSequence()
+                .map { contour -> contour to Imgproc.contourArea(contour) }
+                .filter { (_, area) -> area >= minTableArea }
+                .mapNotNull { (contour, area) ->
+                    val rect = Imgproc.boundingRect(contour)
+                    val aspect = rect.width.toFloat() / rect.height.coerceAtLeast(1)
+                    if (aspect !in 1.15f..2.8f) null else {
+                        val rectangularity = area / (rect.width.toDouble() * rect.height.coerceAtLeast(1))
+                        Triple(rect, area * (0.65 + 0.35 * rectangularity), rectangularity)
+                    }
                 }
+                .maxByOrNull { it.second }
+            // The mask and its contours are in original frame coordinates.
+            if (tableContour != null && tableContour.third > 0.35) {
+                val r = tableContour.first
+                table = RectF(r.x.toFloat(), r.y.toFloat(),
+                    (r.x + r.width).toFloat(), (r.y + r.height).toFloat())
             }
 
             val tableMean = Core.mean(hsv, feltMask)
