@@ -11,10 +11,10 @@ The performance target is 20–30 processed frames per second on supported devic
 - Kotlin Android app with MediaProjection screen capture and a floating overlay.
 - OpenCV 4.10.0 Android AAR dependency.
 - OpenCV HSV/felt segmentation proposes the playable table rectangle; HoughCircles proposes ball centres and radii.
-- Colour-distance filtering rejects felt-like proposals; near-white uniformity ranks a possible cue ball.
+- Colour-distance filtering rejects felt-like proposals; local inner-disk/outer-ring HSV features heuristically classify cue, 8-ball, stripe and solid candidates, with a temporal cue-position prior.
 - Nearest-neighbour exponential smoothing stabilizes ball proposals between frames.
 - Six pocket centres can now be calibrated by touch and persisted locally; guide geometry uses those calibrated positions instead of assuming pocket centres are exactly at table-rectangle corners.
-- The overlay ranks direct ghost-ball shots by cue path length, object-ball path length and cut angle, and rejects paths obstructed by another detected ball.
+- The overlay ranks direct ghost-ball and one-cushion bank-shot proposals by path length and cut angle, and rejects paths obstructed by another detected ball.
 - Capture is throttled to at most approximately 30 FPS and a single-flight background executor skips frames when analysis is busy.
 - This is a classical-CV prototype. No pool-specific trained AI/ONNX model is bundled; AI recognition remains blocked on labelled gameplay data and model evaluation.
 
@@ -42,12 +42,12 @@ The performance target is 20–30 processed frames per second on supported devic
 - Calibrate screen-to-table coordinates.
 - Reject menu screens and partial/occluded tables.
 
-### C. Ball detection and tracking (OpenCV circle proposals and temporal smoothing implemented; trained AI validation pending)
+### C. Ball detection and tracking (OpenCV circle proposals, temporal smoothing and heuristic appearance classes implemented; trained AI validation pending)
 - Train/evaluate a custom detector for cue ball and object balls.
 - Return class, centre, radius and confidence.
 - Track balls without jumping between frames; explicitly mark uncertain detections.
 
-### D. Shot geometry (direct-shot ghost-ball and obstruction prototype implemented; bank-shot simulation and unit tests pending)
+### D. Shot geometry (direct-shot ghost-ball, obstruction checks and one-cushion bank-shot prototype implemented; rail/collision validation and unit tests pending)
 - Unit-test ghost-ball, tangent and cushion reflection calculations.
 - Compare predictions with labelled practice screenshots.
 - Draw direct and bank-shot guides only when geometry and detection confidence pass thresholds.
