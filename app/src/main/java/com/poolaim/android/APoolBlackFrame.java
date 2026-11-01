@@ -1,0 +1,3 @@
+package com.team.aimpool.ai.team.ntpool.typool;
+import android.graphics.Rect;
+public class APoolBlackFrame { private Rect coordinate; private int imageHeight,imageWidth; public APoolBlackFrame(){} public Rect getCoordinate(){return coordinate;} public int getImageHeight(){return imageHeight;} public int getImageWidth(){return imageWidth;} public void setCoordinate(Rect v){coordinate=v;} public void setImageHeight(int v){imageHeight=v;} public void setImageWidth(int v){imageWidth=v;} }
