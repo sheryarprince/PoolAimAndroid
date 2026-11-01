@@ -13,6 +13,7 @@ The performance target is 20–30 processed frames per second on supported devic
 - OpenCV HSV/felt segmentation proposes the playable table rectangle; HoughCircles proposes ball centres and radii.
 - Colour-distance filtering rejects felt-like proposals; near-white uniformity ranks a possible cue ball.
 - Nearest-neighbour exponential smoothing stabilizes ball proposals between frames.
+- Six pocket centres can now be calibrated by touch and persisted locally; guide geometry uses those calibrated positions instead of assuming pocket centres are exactly at table-rectangle corners.
 - The overlay ranks direct ghost-ball shots by cue path length, object-ball path length and cut angle, and rejects paths obstructed by another detected ball.
 - Capture is throttled to at most approximately 30 FPS and a single-flight background executor skips frames when analysis is busy.
 - This is a classical-CV prototype. No pool-specific trained AI/ONNX model is bundled; AI recognition remains blocked on labelled gameplay data and model evaluation.
@@ -35,8 +36,9 @@ The performance target is 20–30 processed frames per second on supported devic
 - Sustained frame rate and processing latency are logged.
 - No guessed guideline is displayed when detection is unavailable.
 
-### B. Table and pocket detection (table rectangle prototype implemented; six-pocket calibration/validation pending)
-- Detect table polygon and six pocket centres across multiple table themes, orientations and screen sizes.
+### B. Table and pocket detection (table rectangle prototype and manual six-pocket calibration implemented; automatic pocket detection/validation pending)
+- Detect table polygon across multiple table themes and orientations.
+- Manual calibration records all six pocket centres; automatic pocket recognition remains a future enhancement.
 - Calibrate screen-to-table coordinates.
 - Reject menu screens and partial/occluded tables.
 
