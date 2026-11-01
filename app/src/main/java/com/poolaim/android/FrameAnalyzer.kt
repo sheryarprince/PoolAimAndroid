@@ -142,8 +142,11 @@ class FrameAnalyzer {
                 val saturation = m[1]
                 val value = m[2]
                 val saturationSpread = sd[1]
-                if (saturation < 48.0 && value > 140.0 && saturationSpread < 38.0)
-                    candidate to (value - saturation * 0.6 - saturationSpread * 1.4)
+                // The cue ball should be uniformly white. A striped ball can
+                // have a bright, low-saturation patch, so penalize saturation
+                // variation strongly and reject non-uniform candidates.
+                if (saturation < 48.0 && value > 140.0 && saturationSpread < 32.0)
+                    candidate to (value - saturation * 0.6 - saturationSpread * 2.5)
                 else null
             }
             val cue = whiteCandidates.maxByOrNull { it.second }?.first
