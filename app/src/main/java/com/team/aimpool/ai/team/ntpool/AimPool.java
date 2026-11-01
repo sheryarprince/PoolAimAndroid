@@ -6,6 +6,7 @@ package com.team.aimpool.ai.team.ntpool;
  * their object contracts are app-specific and have not yet been reconstructed.
  */
 public final class AimPool {
+    static { System.loadLibrary("apool"); }
     private AimPool() {}
 
     public static native Object findAimPoollyInfo(String input);
