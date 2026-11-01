@@ -64,13 +64,17 @@ class FrameAnalyzer {
 
             var table: RectF? = null
             val largest = contours.maxByOrNull { Imgproc.contourArea(it) }
-            if (largest != null && Imgproc.contourArea(largest) > outWidth * outHeight * 0.07) {
+            // feltMask and its contours are in ORIGINAL screenshot coordinates.
+            // Do not scale these bounds by the downsample factor: only the grayscale
+            // image used for HoughCircles is downsampled.
+            if (largest != null && Imgproc.contourArea(largest) > bitmap.width * bitmap.height * 0.07) {
                 val r = Imgproc.boundingRect(largest)
                 val aspect = r.width.toFloat() / r.height.coerceAtLeast(1)
                 if (aspect in 1.15f..2.8f) {
-                    val sx = bitmap.width.toFloat() / outWidth
-                    val sy = bitmap.height.toFloat() / outHeight
-                    table = RectF(r.x * sx, r.y * sy, (r.x + r.width) * sx, (r.y + r.height) * sy)
+                    table = RectF(
+                        r.x.toFloat(), r.y.toFloat(),
+                        (r.x + r.width).toFloat(), (r.y + r.height).toFloat()
+                    )
                 }
             }
 
@@ -90,7 +94,7 @@ class FrameAnalyzer {
                 val expectedRadius = max(4, (right - left) / 72)
                 val minRadius = max(3, (expectedRadius * 0.62).roundToInt())
                 val maxRadius = max(minRadius + 1, (expectedRadius * 1.42).roundToInt())
-                Imgproc.HoughCircles(roi, circles, Imgproc.HOUGH_GRADIENT, 1.15, expectedRadius * 1.65, 105.0, 23.0, minRadius, maxRadius)
+                Imgproc.HoughCircles(roi, circles, Imgproc.HOUGH_GRADIENT, 1.1, expectedRadius * 1.45, 95.0, 18.5, minRadius, maxRadius)
                 val frameScaleX = bitmap.width.toFloat() / outWidth
                 val frameScaleY = bitmap.height.toFloat() / outHeight
                 for (i in 0 until circles.cols()) {
@@ -125,7 +129,7 @@ class FrameAnalyzer {
             val whiteCandidates = trackedProposals.mapNotNull { candidate ->
                 val x = (candidate.x / bitmap.width * hsv.cols()).roundToInt().coerceIn(0, hsv.cols() - 1)
                 val y = (candidate.y / bitmap.height * hsv.rows()).roundToInt().coerceIn(0, hsv.rows() - 1)
-                val r = max(2, (candidate.radius / bitmap.width * hsv.cols() * 0.68f).roundToInt())
+                val r = max(2, (candidate.radius / bitmap.width * hsv.cols() * 0.55f).roundToInt())
                 val mask = Mat.zeros(hsv.rows(), hsv.cols(), CvType.CV_8UC1)
                 Imgproc.circle(mask, org.opencv.core.Point(x.toDouble(), y.toDouble()), r, Scalar(255.0), -1)
                 val mean = MatOfDouble()
@@ -138,7 +142,7 @@ class FrameAnalyzer {
                 val saturation = m[1]
                 val value = m[2]
                 val saturationSpread = sd[1]
-                if (saturation < 55.0 && value > 150.0 && saturationSpread < 45.0)
+                if (saturation < 48.0 && value > 140.0 && saturationSpread < 38.0)
                     candidate to (value - saturation * 0.6 - saturationSpread * 1.4)
                 else null
             }
