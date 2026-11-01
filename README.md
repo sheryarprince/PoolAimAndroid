@@ -10,6 +10,7 @@ Native Android floating practice-guidance overlay for pool games.
 - Local table-colour segmentation and Hough-circle proposals.
 - Cue-ball candidate ranking, ball markers, ghost-ball contact geometry and direct-shot obstruction checks.
 - Floating AIM toggle, minimize/reopen control and overlay style controls.
+- Six-pocket tap calibration saved locally in normalized screen coordinates; shot guides are suppressed until pockets are calibrated.
 - Screen frames remain on-device.
 
 ## Current recognition limits
@@ -35,7 +36,8 @@ The GitHub Actions workflow also builds and uploads `app-debug.apk` after pushes
 3. Start screen capture and accept Android's MediaProjection prompt.
 4. Open a pool table in landscape orientation.
 5. Toggle AIM on and inspect the detected ball count and guide stability.
-6. Test different table skins and partially occluded balls.
+6. Tap **CALIBRATE 6 POCKETS** and mark top-left, top-middle, top-right, bottom-right, bottom-middle and bottom-left pocket centres.
+7. Test different table skins and partially occluded balls.
 7. Record device model, Android version, FPS and false/missed detections.
 
 ## Scope
