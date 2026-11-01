@@ -3,6 +3,12 @@ package com.poolaim.android
 import android.app.*
 import android.content.Intent
 import android.graphics.*
+import android.media.Image
+import android.os.Handler
+import android.os.HandlerThread
+import android.util.Log
+import java.nio.ByteBuffer
+import java.util.concurrent.Executors
 import android.graphics.drawable.GradientDrawable
 import android.hardware.display.DisplayManager
 import android.media.ImageReader
@@ -27,8 +33,14 @@ class OverlayCaptureService : Service() {
     private var guide: GuideView? = null
     private var panel: LinearLayout? = null
     private var miniBubble: TextView? = null
+    private val frameAnalyzer = FrameAnalyzer()
+    private val analysisExecutor = Executors.newSingleThreadExecutor()
+    private var captureThread: HandlerThread? = null
+    @Volatile private var lastFrameNanos = 0L
+    @Volatile private var analyzedFrames = 0L
+    @Volatile private var hasLiveDetection = false
     private var guideParams: WindowManager.LayoutParams? = null
-    private var aimOn = true
+    private var aimOn = false
     private var editMode = false
     private var pocketLines = true
     private var singleLine = true
@@ -61,9 +73,54 @@ class OverlayCaptureService : Service() {
         projection?.registerCallback(object : MediaProjection.Callback() {
             override fun onStop() { reader?.close(); reader = null; stopSelf() }
         }, null)
-        reader?.setOnImageAvailableListener({ it.acquireLatestImage()?.close() }, null)
+        captureThread = HandlerThread("PoolAimFrameCapture").also { it.start() }
+        reader?.setOnImageAvailableListener({ source ->
+            val image = source.acquireLatestImage() ?: return@setOnImageAvailableListener
+            try {
+                val now = System.nanoTime()
+                if (now - lastFrameNanos >= 33_000_000L) {
+                    lastFrameNanos = now
+                    val bitmap = imageToBitmap(image)
+                    if (bitmap != null) {
+                        analysisExecutor.execute {
+                            try {
+                                val result = frameAnalyzer.analyze(bitmap)
+                                if (result != null) {
+                                    analyzedFrames++
+                                    if (analyzedFrames % 60L == 0L) {
+                                        Log.d("PoolAimCapture", "Preprocessed $analyzedFrames frames; latest=${result.processingTimeMs}ms")
+                                    }
+                                }
+                            } finally {
+                                bitmap.recycle()
+                            }
+                        }
+                    }
+                }
+            } catch (t: Throwable) {
+                Log.e("PoolAimCapture", "Could not process captured frame", t)
+            } finally {
+                image.close()
+            }
+        }, Handler(captureThread!!.looper))
         projection?.createVirtualDisplay("PoolAimCapture", m.widthPixels, m.heightPixels, m.densityDpi,
             DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, reader?.surface, null, null)
+    }
+
+    private fun imageToBitmap(image: Image): Bitmap? {
+        if (image.planes.isEmpty()) return null
+        val plane = image.planes[0]
+        val pixelStride = plane.pixelStride
+        val rowStride = plane.rowStride
+        if (pixelStride != 4 || rowStride < image.width * pixelStride) return null
+        val paddedWidth = rowStride / pixelStride
+        val buffer: ByteBuffer = plane.buffer
+        buffer.rewind()
+        val padded = Bitmap.createBitmap(paddedWidth, image.height, Bitmap.Config.ARGB_8888)
+        padded.copyPixelsFromBuffer(buffer)
+        val cropped = Bitmap.createBitmap(padded, 0, 0, image.width, image.height)
+        if (cropped !== padded) padded.recycle()
+        return cropped
     }
 
     private fun addGuide() {
@@ -118,7 +175,7 @@ class OverlayCaptureService : Service() {
         }
         root.addView(styles)
         root.addView(TextView(this).apply {
-            text = "Turn on Edit Ball Positions, then drag the white cue ball and yellow target ball. Guides update as you move them."
+            text = "Automatic recognition is being built. Screen frames are processed locally with OpenCV; aiming lines stay hidden until real ball detections are available."
             textSize = 12f; setTextColor(Color.DKGRAY); setPadding(0, dp(6), 0, dp(6))
         })
         root.addView(Button(this).apply { text = "RESET POSITIONS"; setOnClickListener { guide?.resetPoints() } })
@@ -159,7 +216,7 @@ class OverlayCaptureService : Service() {
         override fun onDraw(c:Canvas) {
             super.onDraw(c)
             table.set(width*.045f,height*.16f,width*.955f,height*.84f)
-            if(!aimOn)return
+            if(!aimOn || !hasLiveDetection)return
             val a=pt(cue); val b=pt(obj); val ps=pockets()
             paint.style=Paint.Style.STROKE; paint.color=Color.WHITE; paint.strokeWidth=dp(2).toFloat()
             c.drawRoundRect(table,radius,radius,paint)
@@ -217,7 +274,11 @@ class OverlayCaptureService : Service() {
         try{guide?.let{wm.removeView(it)}}catch(_:Exception){}
         try{panel?.let{wm.removeView(it)}}catch(_:Exception){}
         try{miniBubble?.let{wm.removeView(it)}}catch(_:Exception){}
-        guide=null;panel=null;miniBubble=null;projection?.stop();projection=null;reader?.close();reader=null
+        guide=null;panel=null;miniBubble=null
+        projection?.stop();projection=null
+        reader?.close();reader=null
+        captureThread?.quitSafely();captureThread=null
+        analysisExecutor.shutdown()
         super.onDestroy()
     }
     override fun onBind(intent:Intent?):IBinder?=null
