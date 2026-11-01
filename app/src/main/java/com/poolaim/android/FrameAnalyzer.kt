@@ -105,7 +105,7 @@ class FrameAnalyzer {
                 roi.release()
             }
 
-            val whiteCandidates = proposals.filter { candidate ->
+            val whiteCandidates = proposals.mapNotNull { candidate ->
                 val x = (candidate.x / bitmap.width * hsv.cols()).roundToInt().coerceIn(0, hsv.cols() - 1)
                 val y = (candidate.y / bitmap.height * hsv.rows()).roundToInt().coerceIn(0, hsv.rows() - 1)
                 val r = max(2, (candidate.radius / bitmap.width * hsv.cols() * 0.32f).roundToInt())
@@ -113,9 +113,11 @@ class FrameAnalyzer {
                 Imgproc.circle(mask, org.opencv.core.Point(x.toDouble(), y.toDouble()), r, Scalar(255.0), -1)
                 val mean = Core.mean(hsv, mask)
                 mask.release()
-                mean.\`val\`[1] < 48.0 && mean.\`val\`[2] > 150.0
+                val saturation = mean.`val`[1]
+                val value = mean.`val`[2]
+                if (saturation < 48.0 && value > 150.0) candidate to (value - saturation * 0.8) else null
             }
-            val cue = whiteCandidates.maxByOrNull { it.confidence }
+            val cue = whiteCandidates.maxByOrNull { it.second }?.first
             val finalBalls = proposals.map { if (it == cue) it.copy(isCueBall = true) else it }
             val edgePixels = Core.countNonZero(edges)
             val totalPixels = max(1, edges.rows() * edges.cols())
