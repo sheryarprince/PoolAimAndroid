@@ -14,6 +14,7 @@ import org.opencv.core.Scalar
 import org.opencv.core.Size
 import org.opencv.imgproc.Imgproc
 import kotlin.math.abs
+import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sqrt
@@ -30,8 +31,11 @@ class FrameAnalyzer {
     )
 
     private val initialized = OpenCVLoader.initLocal()
+    private var previousBalls: List<BallCandidate> = emptyList()
+    private val trackingAlpha = 0.68f
     fun isReady() = initialized
 
+    @Synchronized
     fun analyze(bitmap: Bitmap): Result? {
         if (!initialized || bitmap.isRecycled) return null
         val started = System.nanoTime()
@@ -117,7 +121,8 @@ class FrameAnalyzer {
                 roi.release()
             }
 
-            val whiteCandidates = proposals.mapNotNull { candidate ->
+            val trackedProposals = smoothCandidates(proposals)
+            val whiteCandidates = trackedProposals.mapNotNull { candidate ->
                 val x = (candidate.x / bitmap.width * hsv.cols()).roundToInt().coerceIn(0, hsv.cols() - 1)
                 val y = (candidate.y / bitmap.height * hsv.rows()).roundToInt().coerceIn(0, hsv.rows() - 1)
                 val r = max(2, (candidate.radius / bitmap.width * hsv.cols() * 0.68f).roundToInt())
@@ -138,7 +143,7 @@ class FrameAnalyzer {
                 else null
             }
             val cue = whiteCandidates.maxByOrNull { it.second }?.first
-            val finalBalls = proposals.map { if (it == cue) it.copy(isCueBall = true) else it }
+            val finalBalls = trackedProposals.map { if (it == cue) it.copy(isCueBall = true) else it }
             val edgePixels = Core.countNonZero(edges)
             val totalPixels = max(1, edges.rows() * edges.cols())
             return Result(bitmap.width, bitmap.height, outWidth, outHeight, table, finalBalls, cue,
@@ -152,4 +157,33 @@ class FrameAnalyzer {
             feltMask.release(); hierarchy.release(); edges.release(); circles.release()
         }
     }
+
+    /** Greedy nearest-neighbour association with exponential smoothing. */
+    private fun smoothCandidates(current: List<BallCandidate>): List<BallCandidate> {
+        val unmatched = previousBalls.toMutableList()
+        val smoothed = current.map { detection ->
+            val index = unmatched.indices.minByOrNull { i ->
+                val old = unmatched[i]
+                val dx = detection.x - old.x
+                val dy = detection.y - old.y
+                dx * dx + dy * dy
+            }
+            if (index == null) detection else {
+                val old = unmatched[index]
+                val distance = hypot(detection.x - old.x, detection.y - old.y)
+                unmatched.removeAt(index)
+                if (distance <= max(detection.radius, old.radius) * 2.6f) {
+                    detection.copy(
+                        x = old.x * (1f - trackingAlpha) + detection.x * trackingAlpha,
+                        y = old.y * (1f - trackingAlpha) + detection.y * trackingAlpha,
+                        radius = old.radius * 0.35f + detection.radius * 0.65f
+                    )
+                } else detection
+            }
+        }
+        previousBalls = smoothed
+        return smoothed
+    }
+
+
 }
