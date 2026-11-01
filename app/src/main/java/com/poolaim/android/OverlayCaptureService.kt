@@ -303,7 +303,7 @@ class OverlayCaptureService : Service() {
                 return
             }
 
-            data class CandidateShot(val cue: PointF, val ghost: PointF, val target: PointF, val pocket: PointF, val score: Float)
+            data class CandidateShot(val cue: PointF, val ghost: PointF, val target: PointF, val pocket: PointF, val score: Float, val bounce: PointF? = null)
             fun pointSegmentDistance(p: PointF, a: PointF, b: PointF): Float {
                 val dx = b.x - a.x
                 val dy = b.y - a.y
@@ -312,43 +312,96 @@ class OverlayCaptureService : Service() {
                 val t = (((p.x - a.x) * dx + (p.y - a.y) * dy) / denom).coerceIn(0f, 1f)
                 return hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy))
             }
-
             val shots = ArrayList<CandidateShot>()
+            val clearance = viewRadius * 1.85f
             for (targetCandidate in objects) {
                 val target = PointF(targetCandidate.x * sx, targetCandidate.y * sy)
+                val contactDistance = (cue.radius + targetCandidate.radius) * ((sx + sy) * 0.5f)
                 for (pocket in ps) {
+                    // Direct pocket path.
                     val dx = pocket.x - target.x
                     val dy = pocket.y - target.y
                     val len = hypot(dx, dy).coerceAtLeast(1f)
                     val ux = dx / len
                     val uy = dy / len
-                    val contactDistance = (cue.radius + targetCandidate.radius) * ((sx + sy) * 0.5f)
                     val ghost = PointF(target.x - ux * contactDistance, target.y - uy * contactDistance)
                     val blocked = objects.any { other ->
                         if (other === targetCandidate) false else {
                             val op = PointF(other.x * sx, other.y * sy)
-                            pointSegmentDistance(op, cuePoint, ghost) < viewRadius * 1.85f ||
-                                pointSegmentDistance(op, target, pocket) < viewRadius * 1.85f
+                            pointSegmentDistance(op, cuePoint, ghost) < clearance || pointSegmentDistance(op, target, pocket) < clearance
                         }
                     }
-                    if (blocked) continue
-                    // Extremely thin cut angles are unreliable with noisy ball centres.
-                    val cueDx = ghost.x - cuePoint.x
-                    val cueDy = ghost.y - cuePoint.y
-                    val cueDistance = hypot(cueDx, cueDy).coerceAtLeast(1f)
-                    val alignment = ((cueDx * dx + cueDy * dy) / (cueDistance * len)).coerceIn(-1f, 1f)
-                    val cutAngle = acos(alignment)
-                    if (cutAngle > Math.toRadians(78.0).toFloat()) continue
-                    if (targetCandidate.confidence < 0.45f || cue.confidence < 0.45f) continue
-                    val score = cueDistance + len * 0.55f + cutAngle * viewRadius * 2.2f
-                    shots.add(CandidateShot(cuePoint, ghost, target, pocket, score))
+                    if (!blocked) {
+                        val cueDx = ghost.x - cuePoint.x
+                        val cueDy = ghost.y - cuePoint.y
+                        val cueDistance = hypot(cueDx, cueDy).coerceAtLeast(1f)
+                        val alignment = ((cueDx * dx + cueDy * dy) / (cueDistance * len)).coerceIn(-1f, 1f)
+                        val cutAngle = acos(alignment)
+                        if (cutAngle <= Math.toRadians(78.0).toFloat() && targetCandidate.confidence >= 0.45f && cue.confidence >= 0.45f) {
+                            val score = cueDistance + len * 0.55f + cutAngle * viewRadius * 2.2f
+                            shots.add(CandidateShot(cuePoint, ghost, target, pocket, score))
+                        }
+                    }
+
+                    // One-cushion bank: mirror the pocket across each rail, then
+                    // intersect the target-to-virtual-pocket ray with that rail.
+                    val virtualPockets = listOf(
+                        PointF(pocket.x, 2f * table.top - pocket.y) to 0,
+                        PointF(pocket.x, 2f * table.bottom - pocket.y) to 1,
+                        PointF(2f * table.left - pocket.x, pocket.y) to 2,
+                        PointF(2f * table.right - pocket.x, pocket.y) to 3
+                    )
+                    for ((virtual, rail) in virtualPockets) {
+                        val vx = virtual.x - target.x
+                        val vy = virtual.y - target.y
+                        val t = if (rail <= 1) {
+                            val railY = if (rail == 0) table.top else table.bottom
+                            if (kotlin.math.abs(vy) < 0.001f) continue
+                            (railY - target.y) / vy
+                        } else {
+                            val railX = if (rail == 2) table.left else table.right
+                            if (kotlin.math.abs(vx) < 0.001f) continue
+                            (railX - target.x) / vx
+                        }
+                        if (t <= 0.02f || t >= 0.98f) continue
+                        val bounce = PointF(target.x + vx * t, target.y + vy * t)
+                        val margin = viewRadius * 1.4f
+                        if (bounce.x < table.left + margin || bounce.x > table.right - margin || bounce.y < table.top + margin || bounce.y > table.bottom - margin) continue
+                        val objectDx = bounce.x - target.x
+                        val objectDy = bounce.y - target.y
+                        val objectLength = hypot(objectDx, objectDy).coerceAtLeast(1f)
+                        val bankGhost = PointF(target.x - objectDx / objectLength * contactDistance, target.y - objectDy / objectLength * contactDistance)
+                        val bankBlocked = objects.any { other ->
+                            if (other === targetCandidate) false else {
+                                val op = PointF(other.x * sx, other.y * sy)
+                                pointSegmentDistance(op, cuePoint, bankGhost) < clearance ||
+                                    pointSegmentDistance(op, target, bounce) < clearance ||
+                                    pointSegmentDistance(op, bounce, pocket) < clearance
+                            }
+                        }
+                        if (bankBlocked) continue
+                        val cueDx = bankGhost.x - cuePoint.x
+                        val cueDy = bankGhost.y - cuePoint.y
+                        val cueDistance = hypot(cueDx, cueDy).coerceAtLeast(1f)
+                        val alignment = ((cueDx * objectDx + cueDy * objectDy) / (cueDistance * objectLength)).coerceIn(-1f, 1f)
+                        val cutAngle = acos(alignment)
+                        if (cutAngle > Math.toRadians(78.0).toFloat() || targetCandidate.confidence < 0.45f || cue.confidence < 0.45f) continue
+                        val bankLength = objectLength + hypot(pocket.x - bounce.x, pocket.y - bounce.y)
+                        val score = cueDistance + bankLength * 0.75f + cutAngle * viewRadius * 2.2f + viewRadius * 4f
+                        shots.add(CandidateShot(cuePoint, bankGhost, target, pocket, score, bounce))
+                    }
                 }
             }
             val best = shots.minByOrNull { it.score }
             if (best != null) {
                 drawLine(c, best.cue, best.ghost, Color.CYAN, thickness)
                 drawLine(c, best.ghost, best.target, Color.YELLOW, thickness)
-                drawLine(c, best.target, best.pocket, Color.GREEN, thickness)
+                if (best.bounce == null) {
+                    drawLine(c, best.target, best.pocket, Color.GREEN, thickness)
+                } else {
+                    drawLine(c, best.target, best.bounce, Color.MAGENTA, thickness)
+                    drawLine(c, best.bounce, best.pocket, Color.GREEN, thickness)
+                }
                 if (pocketLines) ps.forEach { drawLine(c, best.target, it, 0x44FFFFFF, maxOf(1f, thickness * .45f)) }
             }
 
