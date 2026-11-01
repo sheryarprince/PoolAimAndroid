@@ -9,10 +9,14 @@ import org.opencv.core.Core
 import org.opencv.core.CvType
 import org.opencv.core.Mat
 import org.opencv.core.MatOfPoint
+import org.opencv.core.MatOfDouble
 import org.opencv.core.Scalar
 import org.opencv.core.Size
 import org.opencv.imgproc.Imgproc
+import kotlin.math.abs
 import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.sqrt
 import kotlin.math.roundToInt
 
 /** OpenCV table/ball proposal stage. A pool-specific trained model can refine these proposals later. */
@@ -46,7 +50,7 @@ class FrameAnalyzer {
             Imgproc.GaussianBlur(small, small, Size(5.0, 5.0), 0.0)
             Imgproc.Canny(small, edges, 60.0, 140.0)
 
-            Core.inRange(hsv, Scalar(68.0, 38.0, 35.0), Scalar(125.0, 255.0, 255.0), feltMask)
+            Core.inRange(hsv, Scalar(68.0, 45.0, 80.0), Scalar(118.0, 255.0, 255.0), feltMask)
             val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_ELLIPSE, Size(17.0, 17.0))
             Imgproc.morphologyEx(feltMask, feltMask, Imgproc.MORPH_CLOSE, kernel)
             kernel.release()
@@ -66,6 +70,10 @@ class FrameAnalyzer {
                 }
             }
 
+            val tableMean = Core.mean(hsv, feltMask)
+            val tableHue = tableMean.`val`[0]
+            val tableSaturation = tableMean.`val`[1]
+            val tableValue = tableMean.`val`[2]
             val proposals = ArrayList<BallCandidate>()
             if (table != null) {
                 val sx = outWidth.toFloat() / bitmap.width
@@ -98,8 +106,12 @@ class FrameAnalyzer {
                     val hue = mean.`val`[0]
                     val saturation = mean.`val`[1]
                     val value = mean.`val`[2]
-                    if (hue in 72.0..122.0 && saturation > 45.0 && value > 45.0) continue
-                    if (value < 18.0) continue
+                    val rawHueDelta = abs(hue - tableHue)
+                    val hueDelta = min(rawHueDelta, 180.0 - rawHueDelta)
+                    val colourDistance = sqrt(hueDelta * hueDelta +
+                        (saturation - tableSaturation) * (saturation - tableSaturation) * 0.15 +
+                        (value - tableValue) * (value - tableValue) * 0.12)
+                    if (colourDistance < 28.0 || value < 18.0) continue
                     proposals.add(BallCandidate(cx, cy, radius, if (saturation < 55.0 && value > 155.0) 0.78f else 0.66f))
                 }
                 roi.release()
@@ -108,14 +120,22 @@ class FrameAnalyzer {
             val whiteCandidates = proposals.mapNotNull { candidate ->
                 val x = (candidate.x / bitmap.width * hsv.cols()).roundToInt().coerceIn(0, hsv.cols() - 1)
                 val y = (candidate.y / bitmap.height * hsv.rows()).roundToInt().coerceIn(0, hsv.rows() - 1)
-                val r = max(2, (candidate.radius / bitmap.width * hsv.cols() * 0.32f).roundToInt())
+                val r = max(2, (candidate.radius / bitmap.width * hsv.cols() * 0.68f).roundToInt())
                 val mask = Mat.zeros(hsv.rows(), hsv.cols(), CvType.CV_8UC1)
                 Imgproc.circle(mask, org.opencv.core.Point(x.toDouble(), y.toDouble()), r, Scalar(255.0), -1)
-                val mean = Core.mean(hsv, mask)
+                val mean = MatOfDouble()
+                val stddev = MatOfDouble()
+                Core.meanStdDev(hsv, mean, stddev, mask)
                 mask.release()
-                val saturation = mean.`val`[1]
-                val value = mean.`val`[2]
-                if (saturation < 48.0 && value > 150.0) candidate to (value - saturation * 0.8) else null
+                val m = mean.toArray()
+                val sd = stddev.toArray()
+                mean.release(); stddev.release()
+                val saturation = m[1]
+                val value = m[2]
+                val saturationSpread = sd[1]
+                if (saturation < 55.0 && value > 150.0 && saturationSpread < 45.0)
+                    candidate to (value - saturation * 0.6 - saturationSpread * 1.4)
+                else null
             }
             val cue = whiteCandidates.maxByOrNull { it.second }?.first
             val finalBalls = proposals.map { if (it == cue) it.copy(isCueBall = true) else it }
