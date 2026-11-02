@@ -45,7 +45,7 @@ class OverlayCaptureService : Service() {
     @Volatile private var lastGoodDetectionNanos = 0L
     private val detectionGraceNanos = 450_000_000L
     private val analysisBusy = AtomicBoolean(false)
-    private var aimOn = false
+    private var aimOn = true
     private var pocketLines = true
     private var ballEdges = true
     private var thickness = 3f
@@ -403,16 +403,43 @@ class OverlayCaptureService : Service() {
                 }
             }
             val best = shots.minByOrNull { it.score }
-            if (best != null) {
-                drawLine(c, best.cue, best.ghost, Color.CYAN, thickness)
-                drawLine(c, best.ghost, best.target, Color.YELLOW, thickness)
-                if (best.bounce == null) {
-                    drawLine(c, best.target, best.pocket, Color.GREEN, thickness)
-                } else {
-                    drawLine(c, best.target, best.bounce, Color.MAGENTA, thickness)
-                    drawLine(c, best.bounce, best.pocket, Color.GREEN, thickness)
+            // If strict collision/angle filters reject every shot, still show a clearly
+            // marked geometric preview. This avoids a blank overlay while making it
+            // obvious that the fallback has not passed obstruction validation.
+            val preview = best ?: objects.flatMap { targetCandidate ->
+                val target = PointF(targetCandidate.x * sx, targetCandidate.y * sy)
+                ps.map { pocket ->
+                    val dx = pocket.x - target.x
+                    val dy = pocket.y - target.y
+                    val length = hypot(dx, dy).coerceAtLeast(1f)
+                    val contact = (cue.radius + targetCandidate.radius) * ((sx + sy) * 0.5f)
+                    val ghost = PointF(target.x - dx / length * contact, target.y - dy / length * contact)
+                    val cueDistance = hypot(ghost.x - cuePoint.x, ghost.y - cuePoint.y)
+                    CandidateShot(cuePoint, ghost, target, pocket, cueDistance + length * 0.55f)
                 }
-                if (pocketLines) ps.forEach { drawLine(c, best.target, it, 0x44FFFFFF, maxOf(1f, thickness * .45f)) }
+            }.minByOrNull { it.score }
+            if (preview != null) {
+                val fallback = best == null
+                val guideColor = if (fallback) 0xFFFFA000.toInt() else Color.CYAN
+                drawLine(c, preview.cue, preview.ghost, guideColor, maxOf(thickness + 1f, 4f))
+                drawLine(c, preview.ghost, preview.target, Color.YELLOW, maxOf(thickness + 1f, 4f))
+                if (preview.bounce == null) {
+                    drawLine(c, preview.target, preview.pocket, if (fallback) 0xFFFFA000.toInt() else Color.GREEN, maxOf(thickness + 1f, 4f))
+                } else {
+                    drawLine(c, preview.target, preview.bounce, Color.MAGENTA, maxOf(thickness + 1f, 4f))
+                    drawLine(c, preview.bounce, preview.pocket, Color.GREEN, maxOf(thickness + 1f, 4f))
+                }
+                paint.style = Paint.Style.FILL
+                paint.textSize = dp(12).toFloat()
+                paint.color = if (fallback) 0xFFFFC46B.toInt() else Color.WHITE
+                c.drawText(if (fallback) "PREVIEW • CHECK BLOCKERS" else "BEST CLEAR PATH",
+                    table.left + dp(6), table.bottom - dp(8), paint)
+                if (pocketLines) ps.forEach { drawLine(c, preview.target, it, 0x44FFFFFF, maxOf(1f, thickness * .45f)) }
+            } else {
+                paint.style = Paint.Style.FILL
+                paint.color = Color.WHITE
+                paint.textSize = dp(12).toFloat()
+                c.drawText("No ball path yet — adjust view / recalibrate", table.left + dp(6), table.bottom - dp(8), paint)
             }
 
             paint.style = Paint.Style.FILL
