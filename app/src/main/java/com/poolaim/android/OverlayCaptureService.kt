@@ -437,7 +437,28 @@ class OverlayCaptureService : Service() {
             if (preview != null) {
                 val fallback = best == null
                 val guideColor = if (fallback) 0xFFFFA000.toInt() else Color.CYAN
-                drawLine(c, preview.cue, preview.ghost, guideColor, maxOf(thickness + 1f, 4f))
+                // Extend the cue-ball aiming ray automatically to the table rail.
+                // The ghost point remains marked so the player can see the intended
+                // contact location while the line stays visible beyond it.
+                val rayDx = preview.ghost.x - preview.cue.x
+                val rayDy = preview.ghost.y - preview.cue.y
+                val rayLength = hypot(rayDx, rayDy).coerceAtLeast(1f)
+                val ux = rayDx / rayLength
+                val uy = rayDy / rayLength
+                var edgeT = Float.POSITIVE_INFINITY
+                if (ux > 0.0001f) edgeT = min(edgeT, (table.right - preview.cue.x) / ux)
+                if (ux < -0.0001f) edgeT = min(edgeT, (table.left - preview.cue.x) / ux)
+                if (uy > 0.0001f) edgeT = min(edgeT, (table.bottom - preview.cue.y) / uy)
+                if (uy < -0.0001f) edgeT = min(edgeT, (table.top - preview.cue.y) / uy)
+                val rayEnd = if (edgeT.isFinite() && edgeT > 0f)
+                    PointF(preview.cue.x + ux * edgeT, preview.cue.y + uy * edgeT)
+                else preview.ghost
+                drawLine(c, preview.cue, rayEnd, guideColor, maxOf(thickness + 1f, 4f))
+                // Highlight the predicted ghost-ball contact point.
+                paint.style = Paint.Style.STROKE
+                paint.color = Color.WHITE
+                paint.strokeWidth = maxOf(2f, thickness)
+                c.drawCircle(preview.ghost.x, preview.ghost.y, viewRadius * 0.62f, paint)
                 drawLine(c, preview.ghost, preview.target, Color.YELLOW, maxOf(thickness + 1f, 4f))
                 if (preview.bounce == null) {
                     drawLine(c, preview.target, preview.pocket, if (fallback) 0xFFFFA000.toInt() else Color.GREEN, maxOf(thickness + 1f, 4f))
