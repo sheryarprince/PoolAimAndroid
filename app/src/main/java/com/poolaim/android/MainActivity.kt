@@ -23,30 +23,32 @@ class MainActivity : Activity() {
             setPadding(36, 48, 36, 36)
         }
         layout.addView(TextView(this).apply {
-            text = "Pool Aim Overlay\n\nThis starter app requests screen-capture permission and displays a movable floating ON/OFF control. Screen capture is processed locally on your device."
-            textSize = 18f
+            text = "Pool Aim — REA Mechanics Scaffold\\n\\nThis build captures raw RGBA screen frames and contains independently tested implementations of the confirmed ARM64 mask-sampling and coordinate mechanics. The original binary-mask threshold and native scoring functions remain unresolved, so aim lines and bank-shot guesses are intentionally disabled."
+            textSize = 17f
         })
         layout.addView(Button(this).apply {
             text = "Grant floating-window permission"
             setOnClickListener {
                 if (!Settings.canDrawOverlays(this@MainActivity)) {
-                    startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+                    startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + packageName)))
                 }
             }
         })
         layout.addView(Button(this).apply {
-            text = "Start overlay"
+            text = "Start raw capture"
             setOnClickListener {
                 if (!Settings.canDrawOverlays(this@MainActivity)) {
-                    startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+                    startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + packageName)))
                 } else {
                     startActivityForResult(projectionManager.createScreenCaptureIntent(), captureRequest)
                 }
             }
         })
         layout.addView(Button(this).apply {
-            text = "Stop overlay"
-            setOnClickListener { stopService(Intent(this@MainActivity, OverlayCaptureService::class.java)) }
+            text = "Stop capture"
+            setOnClickListener {
+                stopService(Intent(this@MainActivity, OverlayCaptureService::class.java))
+            }
         })
         setContentView(layout)
     }
