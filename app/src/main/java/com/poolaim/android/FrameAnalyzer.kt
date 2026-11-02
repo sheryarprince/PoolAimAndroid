@@ -210,38 +210,44 @@ class FrameAnalyzer {
         val top = (table.top * sy).roundToInt().coerceIn(0, edges.rows() - 1)
         val right = (table.right * sx).roundToInt().coerceIn(left + 1, edges.cols())
         val bottom = (table.bottom * sy).roundToInt().coerceIn(top + 1, edges.rows())
+
+        val cx = cue.x * sx
+        val cy = cue.y * sy
+        val radius = cue.radius * ((sx + sy) * 0.5f)
+        // A cue candidate outside the table is not safe to use as an origin.
+        if (cx < left || cx >= right || cy < top || cy >= bottom) return null
+
         val roi = edges.submat(top, bottom, left, right)
         try {
-            val cx = cue.x * sx
-            val cy = cue.y * sy
-            val radius = cue.radius * ((sx + sy) * 0.5f)
-            val startDistance = max(5f, radius * 1.15f)
-            val step = max(2.5f, radius * 0.30f)
-            val sideOffsets = intArrayOf(-2, 0, 2)
+            val startDistance = max(3f, radius * 1.05f)
+            val localEnd = radius * 7.0f
+            val step = max(1.5f, radius * 0.18f)
+            val sideOffsets = intArrayOf(-2, -1, 0, 1, 2)
             var bestScore = 0.0
-            var best: Pair<Float, Float>? = null
+            var bestStickDirection: Pair<Float, Float>? = null
 
-            // Full angular search; 0.5-degree resolution is inexpensive on
-            // the reduced analysis frame and avoids Hough's unrelated edges.
+            // Find the cue-stick shaft immediately adjacent to the cue ball.
+            // Do not score the full table: cushion edges and table markings
+            // must never win simply because they are long.
             for (degree in 0 until 360 step 2) {
                 val angle = Math.toRadians(degree.toDouble())
                 val ux = kotlin.math.cos(angle).toFloat()
                 val uy = kotlin.math.sin(angle).toFloat()
-                var rayMax = Float.POSITIVE_INFINITY
-                if (ux > 0.0001f) rayMax = minOf(rayMax, (right - 1f - cx) / ux)
-                if (ux < -0.0001f) rayMax = minOf(rayMax, (left - cx) / ux)
-                if (uy > 0.0001f) rayMax = minOf(rayMax, (bottom - 1f - cy) / uy)
-                if (uy < -0.0001f) rayMax = minOf(rayMax, (top - cy) / uy)
-                rayMax -= max(10f, radius * 1.2f)
-                if (!rayMax.isFinite() || rayMax <= startDistance + radius * 3f) continue
+                var rayExit = Float.POSITIVE_INFINITY
+                if (ux > 0.0001f) rayExit = minOf(rayExit, (right - 1f - cx) / ux)
+                if (ux < -0.0001f) rayExit = minOf(rayExit, (left - cx) / ux)
+                if (uy > 0.0001f) rayExit = minOf(rayExit, (bottom - 1f - cy) / uy)
+                if (uy < -0.0001f) rayExit = minOf(rayExit, (top - cy) / uy)
+                val endDistance = minOf(localEnd, rayExit - 2f)
+                if (endDistance <= startDistance + radius * 2f) continue
 
-                var supported = 0
+                var hits = 0
                 var longestRun = 0
                 var run = 0
                 var samples = 0
-                var lastSupportDistance = -1000f
+                var lastHit = -1000f
                 var distance = startDistance
-                while (distance <= rayMax) {
+                while (distance <= endDistance) {
                     val px = cx + ux * distance
                     val py = cy + uy * distance
                     var hit = false
@@ -249,36 +255,38 @@ class FrameAnalyzer {
                         val qx = (px - uy * offset).roundToInt() - left
                         val qy = (py + ux * offset).roundToInt() - top
                         if (qx in 0 until roi.cols() && qy in 0 until roi.rows()) {
-                            val value = roi.get(qy, qx)?.get(0) ?: 0.0
-                            if (value > 0.0) { hit = true; break }
+                            if ((roi.get(qy, qx)?.get(0) ?: 0.0) > 0.0) {
+                                hit = true
+                                break
+                            }
                         }
                     }
                     samples++
                     if (hit) {
-                        supported++
-                        if (distance - lastSupportDistance <= step * 2.2f) run++
-                        else run = 1
-                        lastSupportDistance = distance
-                        if (run > longestRun) longestRun = run
+                        hits++
+                        run = if (distance - lastHit <= step * 2.1f) run + 1 else 1
+                        lastHit = distance
+                        longestRun = max(longestRun, run)
                     } else {
                         run = 0
                     }
                     distance += step
                 }
                 if (samples == 0) continue
-                val coverage = supported.toDouble() / samples
+                val coverage = hits.toDouble() / samples
                 val runCoverage = longestRun.toDouble() / samples
-                // A real guide produces sustained support, not a single
-                // table/ball edge crossing. Penalize sparse isolated hits.
-                val score = (runCoverage * 0.75 + coverage * 0.25) *
-                    (rayMax / max(1f, radius * 8f)).coerceAtMost(1.0f)
-                if (longestRun >= max(5, (radius * 1.5f / step).roundToInt()) &&
-                    coverage >= 0.12 && score > bestScore) {
+                val score = runCoverage * 0.8 + coverage * 0.2
+                if (longestRun >= max(5, (radius * 1.6f / step).roundToInt()) &&
+                    coverage >= 0.28 && score > bestScore) {
                     bestScore = score
-                    best = Pair(ux, uy)
+                    bestStickDirection = Pair(ux, uy)
                 }
             }
-            return best
+
+            // The detected shaft points back toward the player. The aiming
+            // guide must extend away from the shaft, starting at the cue ball.
+            val stick = bestStickDirection ?: return null
+            return Pair(-stick.first, -stick.second)
         } finally {
             roi.release()
         }
