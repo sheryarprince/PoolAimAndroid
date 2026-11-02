@@ -472,6 +472,11 @@ class OverlayCaptureService : Service() {
 
     private fun startPocketCalibration() {
         if (calibrationOverlay != null) return
+        // Clear the entire game area before calibration: hide both the large
+        // settings panel and its bubble so neither can cover a corner pocket.
+        panel?.visibility = View.GONE
+        miniBubble?.let { try { wm.removeView(it) } catch (_: Exception) {} }
+        miniBubble = null
         val view = CalibrationView()
         val type = if (Build.VERSION.SDK_INT >= 26) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE
         val lp = WindowManager.LayoutParams(
@@ -485,6 +490,7 @@ class OverlayCaptureService : Service() {
             calibrationOverlay = view
         } catch (t: Throwable) {
             Log.e("PoolAimCalibration", "Unable to show calibration overlay", t)
+            panel?.visibility = View.VISIBLE
         }
     }
 
@@ -496,7 +502,8 @@ class OverlayCaptureService : Service() {
 
         override fun onDraw(canvas: Canvas) {
             super.onDraw(canvas)
-            canvas.drawColor(0x99000000.toInt())
+            // Keep the live table bright and visible while collecting pocket taps.
+            canvas.drawColor(0x22000000.toInt())
             p.color = Color.WHITE
             p.textAlign = Paint.Align.CENTER
             p.textSize = dp(18).toFloat()
@@ -550,6 +557,7 @@ class OverlayCaptureService : Service() {
                 .filterIsInstance<Button>().firstOrNull { it.text.toString().contains("CALIBRATE") || it.text.toString().contains("RECALIBRATE") }
             button?.text = "RECALIBRATE POCKETS"
         }
+        showMiniBubble()
         Toast.makeText(this, "Six pockets calibrated", Toast.LENGTH_SHORT).show()
     }
 
@@ -557,6 +565,7 @@ class OverlayCaptureService : Service() {
         val view = calibrationOverlay ?: return
         try { wm.removeView(view) } catch (_: Exception) {}
         calibrationOverlay = null
+        showMiniBubble()
     }
 
     private fun makeChannel() {
