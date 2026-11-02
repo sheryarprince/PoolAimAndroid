@@ -19,8 +19,6 @@ import android.os.Build
 import android.os.IBinder
 import android.view.*
 import android.widget.*
-import kotlin.math.acos
-import kotlin.math.hypot
 import kotlin.math.min
 
 class OverlayCaptureService : Service() {
@@ -88,7 +86,7 @@ class OverlayCaptureService : Service() {
                                 val result = frameAnalyzer.analyze(bitmap)
                                 if (result != null) {
                                     val valid = result.tableBounds != null &&
-                                        result.cueBall != null && result.balls.size >= 2
+                                        result.cueBall != null && result.cueAxis != null
                                     val nowNanos = System.nanoTime()
                                     if (valid) {
                                         latestAnalysis = result
@@ -253,113 +251,53 @@ class OverlayCaptureService : Service() {
 
     private inner class GuideView : View(this@OverlayCaptureService) {
         private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-        private val table = RectF()
-        private val radius get() = min(width,height)*.014f
-        // Use saved calibration when available; otherwise estimate the six standard
-        // pocket centres from the detected table rectangle so first launch is usable.
-        private fun pockets(tableBounds: RectF): List<PointF> {
-            val saved = calibrationStore.load()
-            if (saved != null && saved.size == 6) {
-                return saved.map { PointF(it.x * width, it.y * height) }
-            }
-            val inset = min(tableBounds.width(), tableBounds.height()) * 0.035f
-            val left = tableBounds.left + inset
-            val right = tableBounds.right - inset
-            val top = tableBounds.top + inset
-            val bottom = tableBounds.bottom - inset
-            val middleX = (left + right) * 0.5f
-            return listOf(
-                PointF(left, top), PointF(middleX, top), PointF(right, top),
-                PointF(right, bottom), PointF(middleX, bottom), PointF(left, bottom)
-            )
-        }
-        private fun drawLine(c:Canvas,a:PointF,b:PointF,color:Int,w:Float=thickness) {
-            paint.color=color; paint.strokeWidth=w; paint.style=Paint.Style.STROKE; paint.strokeCap=Paint.Cap.ROUND
-            c.drawLine(a.x,a.y,b.x,b.y,paint)
-        }
-        private fun ball(c:Canvas,a:PointF,color:Int) {
-            paint.style=Paint.Style.FILL; paint.color=color; c.drawCircle(a.x,a.y,radius,paint)
-            if(ballEdges) { paint.style=Paint.Style.STROKE; paint.strokeWidth=2f; paint.color=Color.WHITE; c.drawCircle(a.x,a.y,radius,paint) }
-        }
-        override fun onDraw(c: Canvas) {
-            super.onDraw(c)
+        override fun onDraw(canvas: Canvas) {
+            super.onDraw(canvas)
             if (!aimOn || !hasLiveDetection) return
             val result = latestAnalysis ?: return
             val bounds = result.tableBounds ?: return
             val cue = result.cueBall ?: return
+            val axis = result.cueAxis ?: return
+
             val sx = width.toFloat() / result.frameWidth.coerceAtLeast(1)
             val sy = height.toFloat() / result.frameHeight.coerceAtLeast(1)
-            table.set(bounds.left * sx, bounds.top * sy, bounds.right * sx, bounds.bottom * sy)
-            val cuePoint = PointF(cue.x * sx, cue.y * sy)
-            val objects = result.balls.filterNot { it.isCueBall }
-            if (objects.isEmpty()) return
+            val left = bounds.left * sx
+            val right = bounds.right * sx
+            val top = bounds.top * sy
+            val bottom = bounds.bottom * sy
+            val cx = cue.x * sx
+            val cy = cue.y * sy
 
-            // Select one plausible cue-ball contact direction. Pocket geometry is
-            // used only to choose the direction; no pocket, ball, contact or path
-            // graphics are rendered.
-            val inset = min(table.width(), table.height()) * 0.035f
-            val left = table.left + inset
-            val right = table.right - inset
-            val top = table.top + inset
-            val bottom = table.bottom - inset
-            val midX = (left + right) * 0.5f
-            val pockets = calibrationStore.load()?.takeIf { it.size == 6 }?.map {
-                PointF(it.x * width, it.y * height)
-            } ?: listOf(
-                PointF(left, top), PointF(midX, top), PointF(right, top),
-                PointF(right, bottom), PointF(midX, bottom), PointF(left, bottom)
-            )
+            // Scale the detected frame-space vector into overlay-space coordinates.
+            var dx = axis.first * sx
+            var dy = axis.second * sy
+            val norm = kotlin.math.hypot(dx, dy)
+            if (norm < 0.0001f) return
+            dx /= norm
+            dy /= norm
 
-            var bestGhost: PointF? = null
-            var bestScore = Float.POSITIVE_INFINITY
-            val scale = (sx + sy) * 0.5f
-            for (targetCandidate in objects) {
-                val target = PointF(targetCandidate.x * sx, targetCandidate.y * sy)
-                val contact = (cue.radius + targetCandidate.radius) * scale
-                for (pocket in pockets) {
-                    val dx = pocket.x - target.x
-                    val dy = pocket.y - target.y
-                    val length = hypot(dx, dy).coerceAtLeast(1f)
-                    val ghost = PointF(target.x - dx / length * contact, target.y - dy / length * contact)
-                    val cueDx = ghost.x - cuePoint.x
-                    val cueDy = ghost.y - cuePoint.y
-                    val cueDistance = hypot(cueDx, cueDy)
-                    val score = cueDistance + length * 0.55f
-                    if (score < bestScore) {
-                        bestScore = score
-                        bestGhost = ghost
-                    }
-                }
-            }
-            val ghost = bestGhost ?: return
-            val dx = ghost.x - cuePoint.x
-            val dy = ghost.y - cuePoint.y
-            val length = hypot(dx, dy)
-            if (length < 1f) return
-            val ux = dx / length
-            val uy = dy / length
-
-            // Extend the same straight cue axis through the cue-ball centre
-            // in both directions, ending at the two opposing table edges.
-            fun edgePoint(dx: Float, dy: Float): PointF? {
-                var t = Float.POSITIVE_INFINITY
-                if (dx > 0.0001f) t = min(t, (table.right - cuePoint.x) / dx)
-                if (dx < -0.0001f) t = min(t, (table.left - cuePoint.x) / dx)
-                if (dy > 0.0001f) t = min(t, (table.bottom - cuePoint.y) / dy)
-                if (dy < -0.0001f) t = min(t, (table.top - cuePoint.y) / dy)
-                if (!t.isFinite() || t <= 0f) return null
-                return PointF(cuePoint.x + dx * t, cuePoint.y + dy * t)
-            }
-            val forwardEdge = edgePoint(ux, uy) ?: return
-            val backwardEdge = edgePoint(-ux, -uy) ?: return
+            // Intersect the single cue-centred axis with the table rectangle.
+            var tMin = Float.NEGATIVE_INFINITY
+            var tMax = Float.POSITIVE_INFINITY
+            if (kotlin.math.abs(dx) > 0.00001f) {
+                val t1 = (left - cx) / dx
+                val t2 = (right - cx) / dx
+                tMin = maxOf(tMin, minOf(t1, t2))
+                tMax = minOf(tMax, maxOf(t1, t2))
+            } else if (cx !in left..right) return
+            if (kotlin.math.abs(dy) > 0.00001f) {
+                val t1 = (top - cy) / dy
+                val t2 = (bottom - cy) / dy
+                tMin = maxOf(tMin, minOf(t1, t2))
+                tMax = minOf(tMax, maxOf(t1, t2))
+            } else if (cy !in top..bottom) return
+            if (!tMin.isFinite() || !tMax.isFinite() || tMin >= tMax) return
 
             paint.style = Paint.Style.STROKE
             paint.color = Color.CYAN
             paint.strokeWidth = maxOf(dp(3).toFloat(), thickness)
             paint.strokeCap = Paint.Cap.ROUND
-            // Two clean extensions; do not draw a marker over the cue ball.
-            c.drawLine(backwardEdge.x, backwardEdge.y, cuePoint.x, cuePoint.y, paint)
-            c.drawLine(cuePoint.x, cuePoint.y, forwardEdge.x, forwardEdge.y, paint)
+            canvas.drawLine(cx + dx * tMin, cy + dy * tMin, cx + dx * tMax, cy + dy * tMax, paint)
         }
     }
 
