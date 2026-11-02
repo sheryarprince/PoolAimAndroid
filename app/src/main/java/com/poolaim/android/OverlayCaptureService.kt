@@ -242,7 +242,24 @@ class OverlayCaptureService : Service() {
         private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
         private val table = RectF()
         private val radius get() = min(width,height)*.014f
-        private fun pockets(): List<PointF>? = calibrationStore.load()?.map { PointF(it.x * width, it.y * height) }
+        // Use saved calibration when available; otherwise estimate the six standard
+        // pocket centres from the detected table rectangle so first launch is usable.
+        private fun pockets(tableBounds: RectF): List<PointF> {
+            val saved = calibrationStore.load()
+            if (saved != null && saved.size == 6) {
+                return saved.map { PointF(it.x * width, it.y * height) }
+            }
+            val inset = min(tableBounds.width(), tableBounds.height()) * 0.035f
+            val left = tableBounds.left + inset
+            val right = tableBounds.right - inset
+            val top = tableBounds.top + inset
+            val bottom = tableBounds.bottom - inset
+            val middleX = (left + right) * 0.5f
+            return listOf(
+                PointF(left, top), PointF(middleX, top), PointF(right, top),
+                PointF(right, bottom), PointF(middleX, bottom), PointF(left, bottom)
+            )
+        }
         private fun drawLine(c:Canvas,a:PointF,b:PointF,color:Int,w:Float=thickness) {
             paint.color=color; paint.strokeWidth=w; paint.style=Paint.Style.STROKE; paint.strokeCap=Paint.Cap.ROUND
             c.drawLine(a.x,a.y,b.x,b.y,paint)
@@ -263,7 +280,7 @@ class OverlayCaptureService : Service() {
             val cue = result.cueBall ?: return
             val cuePoint = PointF(cue.x * sx, cue.y * sy)
             val viewRadius = cue.radius * ((sx + sy) * 0.5f)
-            val ps = pockets()
+            val ps = pockets(table)
             val objects = result.balls.filterNot { it.isCueBall }
             if (objects.isEmpty()) return
 
@@ -303,15 +320,14 @@ class OverlayCaptureService : Service() {
             paint.strokeWidth = 2f
             c.drawCircle(cuePoint.x, cuePoint.y, viewRadius * 1.35f, paint)
 
-            // Keep recognition visible while uncalibrated, but never draw a
-            // shot path using guessed pocket locations.
-            if (ps == null || ps.size != 6) {
-                paint.style = Paint.Style.FILL
-                paint.color = Color.WHITE
-                paint.textSize = dp(12).toFloat()
-                c.drawText("Tap CALIBRATE 6 POCKETS", table.left, table.top - dp(7).toFloat(), paint)
-                return
-            }
+            // Estimated pocket centres are used until the user optionally calibrates
+            // the six pockets. This ensures the first run can show aiming guides.
+            val calibrated = calibrationStore.load()?.size == 6
+            paint.style = Paint.Style.FILL
+            paint.color = if (calibrated) Color.WHITE else 0xFFFFD166.toInt()
+            paint.textSize = dp(10).toFloat()
+            c.drawText(if (calibrated) "POCKETS CALIBRATED" else "ESTIMATED POCKETS • CALIBRATE FOR BETTER ACCURACY",
+                table.left, table.top - dp(7).toFloat(), paint)
 
             data class CandidateShot(val cue: PointF, val ghost: PointF, val target: PointF, val pocket: PointF, val score: Float, val bounce: PointF? = null)
             fun pointSegmentDistance(p: PointF, a: PointF, b: PointF): Float {
