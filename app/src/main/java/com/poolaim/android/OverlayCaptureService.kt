@@ -268,226 +268,79 @@ class OverlayCaptureService : Service() {
             paint.style=Paint.Style.FILL; paint.color=color; c.drawCircle(a.x,a.y,radius,paint)
             if(ballEdges) { paint.style=Paint.Style.STROKE; paint.strokeWidth=2f; paint.color=Color.WHITE; c.drawCircle(a.x,a.y,radius,paint) }
         }
-        override fun onDraw(c:Canvas) {
+        override fun onDraw(c: Canvas) {
             super.onDraw(c)
+            if (!aimOn || !hasLiveDetection) return
             val result = latestAnalysis ?: return
             val bounds = result.tableBounds ?: return
+            val cue = result.cueBall ?: return
             val sx = width.toFloat() / result.frameWidth.coerceAtLeast(1)
             val sy = height.toFloat() / result.frameHeight.coerceAtLeast(1)
             table.set(bounds.left * sx, bounds.top * sy, bounds.right * sx, bounds.bottom * sy)
-            if (!aimOn || !hasLiveDetection) return
-
-            val cue = result.cueBall ?: return
             val cuePoint = PointF(cue.x * sx, cue.y * sy)
-            val viewRadius = cue.radius * ((sx + sy) * 0.5f)
-            val ps = pockets(table)
             val objects = result.balls.filterNot { it.isCueBall }
             if (objects.isEmpty()) return
 
-            paint.style = Paint.Style.STROKE
-            paint.color = Color.WHITE
-            paint.strokeWidth = dp(2).toFloat()
-            c.drawRoundRect(table, radius, radius, paint)
-            ps?.forEach { p ->
-                paint.color = Color.WHITE
-                paint.strokeWidth = 1.5f
-                c.drawCircle(p.x, p.y, viewRadius * 1.25f, paint)
-            }
+            // Select one plausible cue-ball contact direction. Pocket geometry is
+            // used only to choose the direction; no pocket, ball, contact or path
+            // graphics are rendered.
+            val inset = min(table.width(), table.height()) * 0.035f
+            val left = table.left + inset
+            val right = table.right - inset
+            val top = table.top + inset
+            val bottom = table.bottom - inset
+            val midX = (left + right) * 0.5f
+            val pockets = calibrationStore.load()?.takeIf { it.size == 6 }?.map {
+                PointF(it.x * width, it.y * height)
+            } ?: listOf(
+                PointF(left, top), PointF(midX, top), PointF(right, top),
+                PointF(right, bottom), PointF(midX, bottom), PointF(left, bottom)
+            )
 
-            objects.forEach { candidate ->
-                val p = PointF(candidate.x * sx, candidate.y * sy)
-                paint.style = Paint.Style.FILL
-                paint.color = when (candidate.kind) {
-                    FrameAnalyzer.BallKind.EIGHT -> Color.BLACK
-                    FrameAnalyzer.BallKind.STRIPE -> 0xFF4DA3FF.toInt()
-                    FrameAnalyzer.BallKind.SOLID -> 0xFFFFB52E.toInt()
-                    FrameAnalyzer.BallKind.CUE -> Color.WHITE
-                    FrameAnalyzer.BallKind.UNKNOWN -> 0xFFFFB52E.toInt()
-                }
-                c.drawCircle(p.x, p.y, viewRadius, paint)
-                if (ballEdges) {
-                    paint.style = Paint.Style.STROKE
-                    paint.strokeWidth = 2f
-                    paint.color = Color.WHITE
-                    c.drawCircle(p.x, p.y, viewRadius, paint)
-                }
-            }
-            paint.style = Paint.Style.FILL
-            paint.color = Color.WHITE
-            c.drawCircle(cuePoint.x, cuePoint.y, viewRadius, paint)
-            paint.style = Paint.Style.STROKE
-            paint.color = Color.CYAN
-            paint.strokeWidth = 2f
-            c.drawCircle(cuePoint.x, cuePoint.y, viewRadius * 1.35f, paint)
-
-            // Estimated pocket centres are used until the user optionally calibrates
-            // the six pockets. This ensures the first run can show aiming guides.
-            val calibrated = calibrationStore.load()?.size == 6
-            paint.style = Paint.Style.FILL
-            paint.color = if (calibrated) Color.WHITE else 0xFFFFD166.toInt()
-            paint.textSize = dp(10).toFloat()
-            c.drawText(if (calibrated) "POCKETS CALIBRATED" else "ESTIMATED POCKETS • CALIBRATE FOR BETTER ACCURACY",
-                table.left, table.top - dp(7).toFloat(), paint)
-
-            data class CandidateShot(val cue: PointF, val ghost: PointF, val target: PointF, val pocket: PointF, val score: Float, val bounce: PointF? = null)
-            fun pointSegmentDistance(p: PointF, a: PointF, b: PointF): Float {
-                val dx = b.x - a.x
-                val dy = b.y - a.y
-                val denom = dx * dx + dy * dy
-                if (denom <= 0.001f) return hypot(p.x - a.x, p.y - a.y)
-                val t = (((p.x - a.x) * dx + (p.y - a.y) * dy) / denom).coerceIn(0f, 1f)
-                return hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy))
-            }
-            val shots = ArrayList<CandidateShot>()
-            val clearance = viewRadius * 1.85f
+            var bestGhost: PointF? = null
+            var bestScore = Float.POSITIVE_INFINITY
+            val scale = (sx + sy) * 0.5f
             for (targetCandidate in objects) {
                 val target = PointF(targetCandidate.x * sx, targetCandidate.y * sy)
-                val contactDistance = (cue.radius + targetCandidate.radius) * ((sx + sy) * 0.5f)
-                for (pocket in ps) {
-                    // Direct pocket path.
-                    val dx = pocket.x - target.x
-                    val dy = pocket.y - target.y
-                    val len = hypot(dx, dy).coerceAtLeast(1f)
-                    val ux = dx / len
-                    val uy = dy / len
-                    val ghost = PointF(target.x - ux * contactDistance, target.y - uy * contactDistance)
-                    val blocked = objects.any { other ->
-                        if (other === targetCandidate) false else {
-                            val op = PointF(other.x * sx, other.y * sy)
-                            pointSegmentDistance(op, cuePoint, ghost) < clearance || pointSegmentDistance(op, target, pocket) < clearance
-                        }
-                    }
-                    if (!blocked) {
-                        val cueDx = ghost.x - cuePoint.x
-                        val cueDy = ghost.y - cuePoint.y
-                        val cueDistance = hypot(cueDx, cueDy).coerceAtLeast(1f)
-                        val alignment = ((cueDx * dx + cueDy * dy) / (cueDistance * len)).coerceIn(-1f, 1f)
-                        val cutAngle = acos(alignment)
-                        if (cutAngle <= Math.toRadians(78.0).toFloat() && targetCandidate.confidence >= 0.45f && cue.confidence >= 0.45f) {
-                            val score = cueDistance + len * 0.55f + cutAngle * viewRadius * 2.2f
-                            shots.add(CandidateShot(cuePoint, ghost, target, pocket, score))
-                        }
-                    }
-
-                    // One-cushion bank: mirror the pocket across each rail, then
-                    // intersect the target-to-virtual-pocket ray with that rail.
-                    val virtualPockets = listOf(
-                        PointF(pocket.x, 2f * table.top - pocket.y) to 0,
-                        PointF(pocket.x, 2f * table.bottom - pocket.y) to 1,
-                        PointF(2f * table.left - pocket.x, pocket.y) to 2,
-                        PointF(2f * table.right - pocket.x, pocket.y) to 3
-                    )
-                    for ((virtual, rail) in virtualPockets) {
-                        val vx = virtual.x - target.x
-                        val vy = virtual.y - target.y
-                        val t = if (rail <= 1) {
-                            val railY = if (rail == 0) table.top else table.bottom
-                            if (kotlin.math.abs(vy) < 0.001f) continue
-                            (railY - target.y) / vy
-                        } else {
-                            val railX = if (rail == 2) table.left else table.right
-                            if (kotlin.math.abs(vx) < 0.001f) continue
-                            (railX - target.x) / vx
-                        }
-                        if (t <= 0.02f || t >= 0.98f) continue
-                        val bounce = PointF(target.x + vx * t, target.y + vy * t)
-                        val margin = viewRadius * 1.4f
-                        if (bounce.x < table.left + margin || bounce.x > table.right - margin || bounce.y < table.top + margin || bounce.y > table.bottom - margin) continue
-                        val objectDx = bounce.x - target.x
-                        val objectDy = bounce.y - target.y
-                        val objectLength = hypot(objectDx, objectDy).coerceAtLeast(1f)
-                        val bankGhost = PointF(target.x - objectDx / objectLength * contactDistance, target.y - objectDy / objectLength * contactDistance)
-                        val bankBlocked = objects.any { other ->
-                            if (other === targetCandidate) false else {
-                                val op = PointF(other.x * sx, other.y * sy)
-                                pointSegmentDistance(op, cuePoint, bankGhost) < clearance ||
-                                    pointSegmentDistance(op, target, bounce) < clearance ||
-                                    pointSegmentDistance(op, bounce, pocket) < clearance
-                            }
-                        }
-                        if (bankBlocked) continue
-                        val cueDx = bankGhost.x - cuePoint.x
-                        val cueDy = bankGhost.y - cuePoint.y
-                        val cueDistance = hypot(cueDx, cueDy).coerceAtLeast(1f)
-                        val alignment = ((cueDx * objectDx + cueDy * objectDy) / (cueDistance * objectLength)).coerceIn(-1f, 1f)
-                        val cutAngle = acos(alignment)
-                        if (cutAngle > Math.toRadians(78.0).toFloat() || targetCandidate.confidence < 0.45f || cue.confidence < 0.45f) continue
-                        val bankLength = objectLength + hypot(pocket.x - bounce.x, pocket.y - bounce.y)
-                        val score = cueDistance + bankLength * 0.75f + cutAngle * viewRadius * 2.2f + viewRadius * 4f
-                        shots.add(CandidateShot(cuePoint, bankGhost, target, pocket, score, bounce))
-                    }
-                }
-            }
-            val best = shots.minByOrNull { it.score }
-            // If strict collision/angle filters reject every shot, still show a clearly
-            // marked geometric preview. This avoids a blank overlay while making it
-            // obvious that the fallback has not passed obstruction validation.
-            val preview = best ?: objects.flatMap { targetCandidate ->
-                val target = PointF(targetCandidate.x * sx, targetCandidate.y * sy)
-                ps.map { pocket ->
+                val contact = (cue.radius + targetCandidate.radius) * scale
+                for (pocket in pockets) {
                     val dx = pocket.x - target.x
                     val dy = pocket.y - target.y
                     val length = hypot(dx, dy).coerceAtLeast(1f)
-                    val contact = (cue.radius + targetCandidate.radius) * ((sx + sy) * 0.5f)
                     val ghost = PointF(target.x - dx / length * contact, target.y - dy / length * contact)
-                    val cueDistance = hypot(ghost.x - cuePoint.x, ghost.y - cuePoint.y)
-                    CandidateShot(cuePoint, ghost, target, pocket, cueDistance + length * 0.55f)
+                    val cueDx = ghost.x - cuePoint.x
+                    val cueDy = ghost.y - cuePoint.y
+                    val cueDistance = hypot(cueDx, cueDy)
+                    val score = cueDistance + length * 0.55f
+                    if (score < bestScore) {
+                        bestScore = score
+                        bestGhost = ghost
+                    }
                 }
-            }.minByOrNull { it.score }
-            if (preview != null) {
-                val fallback = best == null
-                val guideColor = if (fallback) 0xFFFFA000.toInt() else Color.CYAN
-                // Extend the cue-ball aiming ray automatically to the table rail.
-                // The ghost point remains marked so the player can see the intended
-                // contact location while the line stays visible beyond it.
-                val rayDx = preview.ghost.x - preview.cue.x
-                val rayDy = preview.ghost.y - preview.cue.y
-                val rayLength = hypot(rayDx, rayDy).coerceAtLeast(1f)
-                val ux = rayDx / rayLength
-                val uy = rayDy / rayLength
-                var edgeT = Float.POSITIVE_INFINITY
-                if (ux > 0.0001f) edgeT = min(edgeT, (table.right - preview.cue.x) / ux)
-                if (ux < -0.0001f) edgeT = min(edgeT, (table.left - preview.cue.x) / ux)
-                if (uy > 0.0001f) edgeT = min(edgeT, (table.bottom - preview.cue.y) / uy)
-                if (uy < -0.0001f) edgeT = min(edgeT, (table.top - preview.cue.y) / uy)
-                val rayEnd = if (edgeT.isFinite() && edgeT > 0f)
-                    PointF(preview.cue.x + ux * edgeT, preview.cue.y + uy * edgeT)
-                else preview.ghost
-                drawLine(c, preview.cue, rayEnd, guideColor, maxOf(thickness + 1f, 4f))
-                // Highlight the predicted ghost-ball contact point.
-                paint.style = Paint.Style.STROKE
-                paint.color = Color.WHITE
-                paint.strokeWidth = maxOf(2f, thickness)
-                c.drawCircle(preview.ghost.x, preview.ghost.y, viewRadius * 0.62f, paint)
-                drawLine(c, preview.ghost, preview.target, Color.YELLOW, maxOf(thickness + 1f, 4f))
-                if (preview.bounce == null) {
-                    drawLine(c, preview.target, preview.pocket, if (fallback) 0xFFFFA000.toInt() else Color.GREEN, maxOf(thickness + 1f, 4f))
-                } else {
-                    drawLine(c, preview.target, preview.bounce, Color.MAGENTA, maxOf(thickness + 1f, 4f))
-                    drawLine(c, preview.bounce, preview.pocket, Color.GREEN, maxOf(thickness + 1f, 4f))
-                }
-                paint.style = Paint.Style.FILL
-                paint.textSize = dp(12).toFloat()
-                paint.color = if (fallback) 0xFFFFC46B.toInt() else Color.WHITE
-                c.drawText(if (fallback) "PREVIEW • CHECK BLOCKERS" else "BEST CLEAR PATH",
-                    table.left + dp(6), table.bottom - dp(8), paint)
-                if (pocketLines) ps.forEach { drawLine(c, preview.target, it, 0x44FFFFFF, maxOf(1f, thickness * .45f)) }
-            } else {
-                paint.style = Paint.Style.FILL
-                paint.color = Color.WHITE
-                paint.textSize = dp(12).toFloat()
-                c.drawText("No ball path yet — adjust view / recalibrate", table.left + dp(6), table.bottom - dp(8), paint)
             }
+            val ghost = bestGhost ?: return
+            val dx = ghost.x - cuePoint.x
+            val dy = ghost.y - cuePoint.y
+            val length = hypot(dx, dy)
+            if (length < 1f) return
+            val ux = dx / length
+            val uy = dy / length
 
-            paint.style = Paint.Style.FILL
-            paint.color = Color.WHITE
-            paint.textSize = dp(11).toFloat()
-            val cueQuality = (cue.appearanceConfidence * 100f).toInt()
-            val classCounts = result.balls.groupingBy { it.kind }.eachCount()
-            c.drawText(
-                "CV ${result.balls.size} | cue ${cueQuality}% | 8:${classCounts[FrameAnalyzer.BallKind.EIGHT] ?: 0} S:${classCounts[FrameAnalyzer.BallKind.STRIPE] ?: 0}",
-                table.left, table.top - dp(7).toFloat(), paint
-            )
+            // Extend exactly one line from the cue-ball centre to the first
+            // playable-table edge in the selected direction.
+            var edgeT = Float.POSITIVE_INFINITY
+            if (ux > 0.0001f) edgeT = min(edgeT, (table.right - cuePoint.x) / ux)
+            if (ux < -0.0001f) edgeT = min(edgeT, (table.left - cuePoint.x) / ux)
+            if (uy > 0.0001f) edgeT = min(edgeT, (table.bottom - cuePoint.y) / uy)
+            if (uy < -0.0001f) edgeT = min(edgeT, (table.top - cuePoint.y) / uy)
+            if (!edgeT.isFinite() || edgeT <= 0f) return
+            val edgePoint = PointF(cuePoint.x + ux * edgeT, cuePoint.y + uy * edgeT)
+
+            paint.style = Paint.Style.STROKE
+            paint.color = Color.CYAN
+            paint.strokeWidth = maxOf(dp(3).toFloat(), thickness)
+            paint.strokeCap = Paint.Cap.ROUND
+            c.drawLine(cuePoint.x, cuePoint.y, edgePoint.x, edgePoint.y, paint)
         }
     }
 
