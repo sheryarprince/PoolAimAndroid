@@ -276,28 +276,23 @@ class OverlayCaptureService : Service() {
             dx /= norm
             dy /= norm
 
-            // Intersect the single cue-centred axis with the table rectangle.
-            var tMin = Float.NEGATIVE_INFINITY
-            var tMax = Float.POSITIVE_INFINITY
-            if (kotlin.math.abs(dx) > 0.00001f) {
-                val t1 = (left - cx) / dx
-                val t2 = (right - cx) / dx
-                tMin = maxOf(tMin, minOf(t1, t2))
-                tMax = minOf(tMax, maxOf(t1, t2))
-            } else if (cx !in left..right) return
-            if (kotlin.math.abs(dy) > 0.00001f) {
-                val t1 = (top - cy) / dy
-                val t2 = (bottom - cy) / dy
-                tMin = maxOf(tMin, minOf(t1, t2))
-                tMax = minOf(tMax, maxOf(t1, t2))
-            } else if (cy !in top..bottom) return
-            if (!tMin.isFinite() || !tMax.isFinite() || tMin >= tMax) return
+            // The cue centre must be inside the detected playing surface.
+            if (cx < left || cx > right || cy < top || cy > bottom) return
+
+            // Draw only forward from the cue ball. Never extend the line
+            // backwards through the table or outside the detected surface.
+            var tExit = Float.POSITIVE_INFINITY
+            if (dx > 0.00001f) tExit = minOf(tExit, (right - cx) / dx)
+            if (dx < -0.00001f) tExit = minOf(tExit, (left - cx) / dx)
+            if (dy > 0.00001f) tExit = minOf(tExit, (bottom - cy) / dy)
+            if (dy < -0.00001f) tExit = minOf(tExit, (top - cy) / dy)
+            if (!tExit.isFinite() || tExit <= 0f) return
 
             paint.style = Paint.Style.STROKE
             paint.color = Color.CYAN
             paint.strokeWidth = maxOf(dp(3).toFloat(), thickness)
             paint.strokeCap = Paint.Cap.ROUND
-            canvas.drawLine(cx + dx * tMin, cy + dy * tMin, cx + dx * tMax, cy + dy * tMax, paint)
+            canvas.drawLine(cx, cy, cx + dx * tExit, cy + dy * tExit, paint)
         }
     }
 
