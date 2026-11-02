@@ -183,9 +183,17 @@ class FrameAnalyzer {
 
 
     /**
-     * Finds a real image segment that begins close to the cue-ball perimeter.
-     * The returned vector points from the cue ball toward the visible stick/guide.
-     * It deliberately does not inspect object balls or pocket locations.
+     * REA-inspired aiming-axis stage.
+     *
+     * The readable AimPool boundary exposes a line angle and short-line
+     * measurements after scene/table-frame preparation. Its native detector
+     * is unavailable, so this adapter estimates that angle from the actual
+     * bright aiming-guide pixels in the captured scene. It does NOT select
+     * arbitrary long Hough segments or infer a direction from balls/pockets.
+     *
+     * Search rays originate at the detected cue-ball centre. For each angle,
+     * measure continuous edge support just outside the cue-ball perimeter;
+     * prefer a long, narrow, continuous guide and stop before the cushion.
      */
     private fun detectCueAxis(
         edges: Mat,
@@ -203,56 +211,72 @@ class FrameAnalyzer {
         val right = (table.right * sx).roundToInt().coerceIn(left + 1, edges.cols())
         val bottom = (table.bottom * sy).roundToInt().coerceIn(top + 1, edges.rows())
         val roi = edges.submat(top, bottom, left, right)
-        val lines = Mat()
         try {
-            val radius = (cue.radius * ((sx + sy) * 0.5f)).toDouble()
-            val cx = (cue.x * sx).toDouble()
-            val cy = (cue.y * sy).toDouble()
-            Imgproc.HoughLinesP(
-                roi, lines, 1.0, Math.PI / 180.0,
-                max(12, (radius * 1.15).roundToInt()),
-                max(12.0, radius * 2.4),
-                max(4.0, radius * 0.65)
-            )
+            val cx = cue.x * sx
+            val cy = cue.y * sy
+            val radius = cue.radius * ((sx + sy) * 0.5f)
+            val startDistance = max(5f, radius * 1.15f)
+            val maxDistance = minOf(
+                cx - left, right - 1f - cx, cy - top, bottom - 1f - cy
+            ).coerceAtLeast(0f) - max(10f, radius * 1.2f)
+            if (maxDistance <= startDistance + radius * 3f) return null
+
+            val step = max(1.5f, radius * 0.16f)
+            val sideOffsets = intArrayOf(-3, -2, -1, 0, 1, 2, 3)
+            var bestScore = 0.0
             var best: Pair<Float, Float>? = null
-            var bestScore = Double.NEGATIVE_INFINITY
-            for (i in 0 until lines.rows()) {
-                val v = lines.get(i, 0) ?: continue
-                if (v.size < 4) continue
-                val x1 = v[0] + left
-                val y1 = v[1] + top
-                val x2 = v[2] + left
-                val y2 = v[3] + top
-                val dx = x2 - x1
-                val dy = y2 - y1
-                val length = hypot(dx, dy)
-                if (length < radius * 2.2) continue
-                val ux = dx / length
-                val uy = dy / length
-                val t = (((cx - x1) * ux + (cy - y1) * uy) / length).coerceIn(0.0, 1.0)
-                val nearX = x1 + ux * length * t
-                val nearY = y1 + uy * length * t
-                val distance = hypot(cx - nearX, cy - nearY)
-                if (distance > radius * 2.6) continue
-                val farX: Double
-                val farY: Double
-                val d1 = hypot(cx - x1, cy - y1)
-                val d2 = hypot(cx - x2, cy - y2)
-                if (d1 >= d2) { farX = x1; farY = y1 } else { farX = x2; farY = y2 }
-                var vx = farX - cx
-                var vy = farY - cy
-                val norm = hypot(vx, vy)
-                if (norm < radius * 1.5) continue
-                vx /= norm; vy /= norm
-                val score = length - distance * 2.4 + (radius * 0.25)
-                if (score > bestScore) {
+
+            // Full angular search; 0.5-degree resolution is inexpensive on
+            // the reduced analysis frame and avoids Hough's unrelated edges.
+            for (degree in 0 until 360) {
+                val angle = Math.toRadians(degree.toDouble())
+                val ux = kotlin.math.cos(angle).toFloat()
+                val uy = kotlin.math.sin(angle).toFloat()
+                var supported = 0
+                var longestRun = 0
+                var run = 0
+                var samples = 0
+                var lastSupportDistance = -1000f
+                var distance = startDistance
+                while (distance <= maxDistance) {
+                    val px = cx + ux * distance
+                    val py = cy + uy * distance
+                    var hit = false
+                    for (offset in sideOffsets) {
+                        val qx = (px - uy * offset).roundToInt() - left
+                        val qy = (py + ux * offset).roundToInt() - top
+                        if (qx in 0 until roi.cols() && qy in 0 until roi.rows()) {
+                            val value = roi.get(qy, qx)?.get(0) ?: 0.0
+                            if (value > 0.0) { hit = true; break }
+                        }
+                    }
+                    samples++
+                    if (hit) {
+                        supported++
+                        if (distance - lastSupportDistance <= step * 2.2f) run++
+                        else run = 1
+                        lastSupportDistance = distance
+                        if (run > longestRun) longestRun = run
+                    } else {
+                        run = 0
+                    }
+                    distance += step
+                }
+                if (samples == 0) continue
+                val coverage = supported.toDouble() / samples
+                val runCoverage = longestRun.toDouble() / samples
+                // A real guide produces sustained support, not a single
+                // table/ball edge crossing. Penalize sparse isolated hits.
+                val score = (runCoverage * 0.75 + coverage * 0.25) *
+                    (maxDistance / max(1f, radius * 8f)).coerceAtMost(1.0)
+                if (longestRun >= max(8, (radius * 2.0f / step).roundToInt()) &&
+                    coverage >= 0.12 && score > bestScore) {
                     bestScore = score
-                    best = Pair(vx.toFloat(), vy.toFloat())
+                    best = Pair(ux, uy)
                 }
             }
             return best
         } finally {
-            lines.release()
             roi.release()
         }
     }
