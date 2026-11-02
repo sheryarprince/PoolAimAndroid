@@ -271,7 +271,7 @@ class FrameAnalyzer {
                 // A real guide produces sustained support, not a single
                 // table/ball edge crossing. Penalize sparse isolated hits.
                 val score = (runCoverage * 0.75 + coverage * 0.25) *
-                    (rayMax / max(1f, radius * 8f)).coerceAtMost(1.0)
+                    (rayMax / max(1f, radius * 8f)).coerceAtMost(1.0f)
                 if (longestRun >= max(5, (radius * 1.5f / step).roundToInt()) &&
                     coverage >= 0.12 && score > bestScore) {
                     bestScore = score
