@@ -216,14 +216,14 @@ class FrameAnalyzer {
             val cy = cue.y * sy
             val radius = cue.radius * ((sx + sy) * 0.5f)
             val startDistance = max(5f, radius * 1.15f)
-            val step = max(1.5f, radius * 0.16f)
-            val sideOffsets = intArrayOf(-3, -2, -1, 0, 1, 2, 3)
+            val step = max(2.5f, radius * 0.30f)
+            val sideOffsets = intArrayOf(-2, 0, 2)
             var bestScore = 0.0
             var best: Pair<Float, Float>? = null
 
             // Full angular search; 0.5-degree resolution is inexpensive on
             // the reduced analysis frame and avoids Hough's unrelated edges.
-            for (degree in 0 until 360) {
+            for (degree in 0 until 360 step 2) {
                 val angle = Math.toRadians(degree.toDouble())
                 val ux = kotlin.math.cos(angle).toFloat()
                 val uy = kotlin.math.sin(angle).toFloat()
@@ -272,7 +272,7 @@ class FrameAnalyzer {
                 // table/ball edge crossing. Penalize sparse isolated hits.
                 val score = (runCoverage * 0.75 + coverage * 0.25) *
                     (rayMax / max(1f, radius * 8f)).coerceAtMost(1.0)
-                if (longestRun >= max(8, (radius * 2.0f / step).roundToInt()) &&
+                if (longestRun >= max(5, (radius * 1.5f / step).roundToInt()) &&
                     coverage >= 0.12 && score > bestScore) {
                     bestScore = score
                     best = Pair(ux, uy)
