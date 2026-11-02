@@ -165,36 +165,49 @@ class OverlayCaptureService : Service() {
     private fun addPanel() {
         if (panel != null) return
         val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL; setPadding(dp(10), dp(8), dp(10), dp(8))
-            background = GradientDrawable().apply { setColor(Color.WHITE); cornerRadius = dp(12).toFloat(); setStroke(dp(1), Color.LTGRAY) }
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(10), dp(8), dp(10), dp(8))
+            background = GradientDrawable().apply {
+                setColor(Color.WHITE)
+                cornerRadius = dp(12).toFloat()
+                setStroke(dp(1), Color.LTGRAY)
+            }
             elevation = dp(8).toFloat()
         }
-        val head = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        head.addView(TextView(this).apply { text = "POOL AIM"; textSize = 16f; setTextColor(Color.rgb(20,80,100)); setTypeface(typeface, 1) },
-            LinearLayout.LayoutParams(0, dp(44), 1f))
-        head.addView(Button(this).apply { text = "AIM: ON"; setOnClickListener { aimOn = !aimOn; text = if (aimOn) "AIM: ON" else "AIM: OFF"; guide?.invalidate() } })
-        root.addView(head)
-        root.addView(section("Live Detection Display"))
-        switch(root, "Show pocket reference lines", true) { pocketLines = it; guide?.invalidate() }
-        switch(root, "Show ball outlines", true) { ballEdges = it; guide?.invalidate() }
-        root.addView(Button(this).apply { text = if (calibrationStore.load() == null) "CALIBRATE 6 POCKETS" else "RECALIBRATE POCKETS"; setOnClickListener { startPocketCalibration() } })
-        root.addView(section("Guideline Style"))
-        val styles = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        listOf("Thin", "Normal", "Thick").forEachIndexed { i, s ->
-            styles.addView(Button(this).apply { text = s; setOnClickListener { thickness = listOf(1.5f,3f,6f)[i]; guide?.invalidate() } },
-                LinearLayout.LayoutParams(0, dp(42), 1f))
+        val head = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
         }
-        root.addView(styles)
-        root.addView(TextView(this).apply {
-            text = "Live OpenCV table and ball proposals are processed on-device. Guides appear only when a table, cue candidate and object balls are detected. A trained pool-specific AI model is a separate next milestone."
-            textSize = 12f; setTextColor(Color.DKGRAY); setPadding(0, dp(6), 0, dp(6))
+        head.addView(TextView(this).apply {
+            text = "POOL AIM"
+            textSize = 16f
+            setTextColor(Color.rgb(20, 80, 100))
+            setTypeface(typeface, 1)
+        }, LinearLayout.LayoutParams(0, dp(44), 1f))
+        head.addView(Button(this).apply {
+            text = if (aimOn) "AIM: ON" else "AIM: OFF"
+            setOnClickListener {
+                aimOn = !aimOn
+                text = if (aimOn) "AIM: ON" else "AIM: OFF"
+                guide?.invalidate()
+            }
         })
-        root.addView(Button(this).apply { text = "MINIMIZE"; setOnClickListener { root.visibility = View.GONE; showMiniBubble() } })
+        root.addView(head)
+        root.addView(Button(this).apply {
+            text = "MINIMIZE"
+            setOnClickListener {
+                root.visibility = View.GONE
+                showMiniBubble()
+            }
+        })
         val type = if (Build.VERSION.SDK_INT >= 26) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE
-        val lp = WindowManager.LayoutParams(dp(310), WindowManager.LayoutParams.WRAP_CONTENT, type,
+        val lp = WindowManager.LayoutParams(dp(230), WindowManager.LayoutParams.WRAP_CONTENT, type,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN, PixelFormat.TRANSLUCENT)
-        lp.gravity = Gravity.TOP or Gravity.END; lp.x = dp(10); lp.y = dp(90)
-        wm.addView(root, lp); panel = root
+        lp.gravity = Gravity.TOP or Gravity.END
+        lp.x = dp(10)
+        lp.y = dp(90)
+        wm.addView(root, lp)
+        panel = root
     }
 
     /** Replace the expanded settings panel with a compact tap-to-restore bubble. */
@@ -326,21 +339,27 @@ class OverlayCaptureService : Service() {
             val ux = dx / length
             val uy = dy / length
 
-            // Extend exactly one line from the cue-ball centre to the first
-            // playable-table edge in the selected direction.
-            var edgeT = Float.POSITIVE_INFINITY
-            if (ux > 0.0001f) edgeT = min(edgeT, (table.right - cuePoint.x) / ux)
-            if (ux < -0.0001f) edgeT = min(edgeT, (table.left - cuePoint.x) / ux)
-            if (uy > 0.0001f) edgeT = min(edgeT, (table.bottom - cuePoint.y) / uy)
-            if (uy < -0.0001f) edgeT = min(edgeT, (table.top - cuePoint.y) / uy)
-            if (!edgeT.isFinite() || edgeT <= 0f) return
-            val edgePoint = PointF(cuePoint.x + ux * edgeT, cuePoint.y + uy * edgeT)
+            // Extend the same straight cue axis through the cue-ball centre
+            // in both directions, ending at the two opposing table edges.
+            fun edgePoint(dx: Float, dy: Float): PointF? {
+                var t = Float.POSITIVE_INFINITY
+                if (dx > 0.0001f) t = min(t, (table.right - cuePoint.x) / dx)
+                if (dx < -0.0001f) t = min(t, (table.left - cuePoint.x) / dx)
+                if (dy > 0.0001f) t = min(t, (table.bottom - cuePoint.y) / dy)
+                if (dy < -0.0001f) t = min(t, (table.top - cuePoint.y) / dy)
+                if (!t.isFinite() || t <= 0f) return null
+                return PointF(cuePoint.x + dx * t, cuePoint.y + dy * t)
+            }
+            val forwardEdge = edgePoint(ux, uy) ?: return
+            val backwardEdge = edgePoint(-ux, -uy) ?: return
 
             paint.style = Paint.Style.STROKE
             paint.color = Color.CYAN
             paint.strokeWidth = maxOf(dp(3).toFloat(), thickness)
             paint.strokeCap = Paint.Cap.ROUND
-            c.drawLine(cuePoint.x, cuePoint.y, edgePoint.x, edgePoint.y, paint)
+            // Two clean extensions; do not draw a marker over the cue ball.
+            c.drawLine(backwardEdge.x, backwardEdge.y, cuePoint.x, cuePoint.y, paint)
+            c.drawLine(cuePoint.x, cuePoint.y, forwardEdge.x, forwardEdge.y, paint)
         }
     }
 
