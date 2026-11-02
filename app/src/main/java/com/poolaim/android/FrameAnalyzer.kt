@@ -205,12 +205,12 @@ class FrameAnalyzer {
         val roi = edges.submat(top, bottom, left, right)
         val lines = Mat()
         try {
-            val radius = cue.radius * ((sx + sy) * 0.5f)
-            val cx = cue.x * sx
-            val cy = cue.y * sy
+            val radius = (cue.radius * ((sx + sy) * 0.5f)).toDouble()
+            val cx = (cue.x * sx).toDouble()
+            val cy = (cue.y * sy).toDouble()
             Imgproc.HoughLinesP(
                 roi, lines, 1.0, Math.PI / 180.0,
-                max(12, (radius * 1.15f).roundToInt()),
+                max(12, (radius * 1.15).roundToInt()),
                 max(12.0, radius * 2.4),
                 max(4.0, radius * 0.65)
             )
