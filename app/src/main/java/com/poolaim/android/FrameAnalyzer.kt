@@ -28,6 +28,8 @@ class FrameAnalyzer {
         val frameWidth: Int, val frameHeight: Int,
         val processingWidth: Int, val processingHeight: Int,
         val tableBounds: RectF?, val balls: List<BallCandidate>, val cueBall: BallCandidate?,
+        /** Unit direction of the visually detected cue-stick/aim segment in frame coordinates. */
+        val cueAxis: Pair<Float, Float>?,
         val edgeDensity: Double, val processingTimeMs: Long
     )
 
@@ -160,9 +162,14 @@ class FrameAnalyzer {
                     candidate.copy(isCueBall = true, kind = BallKind.CUE)
                 else candidate.copy(isCueBall = false)
             }
+            // The aiming direction must come from pixels next to the cue ball, not from
+            // object-ball/pocket geometry. Hough segments are restricted to the table ROI.
+            val cueAxis = if (table != null && cue != null)
+                detectCueAxis(edges, table, cue, bitmap.width, bitmap.height, outWidth, outHeight)
+            else null
             val edgePixels = Core.countNonZero(edges)
             val totalPixels = max(1, edges.rows() * edges.cols())
-            return Result(bitmap.width, bitmap.height, outWidth, outHeight, table, finalBalls, cue,
+            return Result(bitmap.width, bitmap.height, outWidth, outHeight, table, finalBalls, cue, cueAxis,
                 edgePixels.toDouble() / totalPixels, (System.nanoTime() - started) / 1_000_000L)
         } catch (t: Throwable) {
             Log.e("PoolAimAnalyzer", "Frame analysis failed", t)
@@ -171,6 +178,82 @@ class FrameAnalyzer {
             contours.forEach { it.release() }
             rgba.release(); rgb.release(); hsv.release(); gray.release(); small.release()
             feltMask.release(); hierarchy.release(); edges.release(); circles.release()
+        }
+    }
+
+
+    /**
+     * Finds a real image segment that begins close to the cue-ball perimeter.
+     * The returned vector points from the cue ball toward the visible stick/guide.
+     * It deliberately does not inspect object balls or pocket locations.
+     */
+    private fun detectCueAxis(
+        edges: Mat,
+        table: RectF,
+        cue: BallCandidate,
+        frameWidth: Int,
+        frameHeight: Int,
+        processingWidth: Int,
+        processingHeight: Int
+    ): Pair<Float, Float>? {
+        val sx = processingWidth.toFloat() / frameWidth
+        val sy = processingHeight.toFloat() / frameHeight
+        val left = (table.left * sx).roundToInt().coerceIn(0, edges.cols() - 1)
+        val top = (table.top * sy).roundToInt().coerceIn(0, edges.rows() - 1)
+        val right = (table.right * sx).roundToInt().coerceIn(left + 1, edges.cols())
+        val bottom = (table.bottom * sy).roundToInt().coerceIn(top + 1, edges.rows())
+        val roi = edges.submat(top, bottom, left, right)
+        val lines = Mat()
+        try {
+            val radius = cue.radius * ((sx + sy) * 0.5f)
+            val cx = cue.x * sx
+            val cy = cue.y * sy
+            Imgproc.HoughLinesP(
+                roi, lines, 1.0, Math.PI / 180.0,
+                max(12, (radius * 1.15f).roundToInt()),
+                max(12.0, radius * 2.4),
+                max(4.0, radius * 0.65)
+            )
+            var best: Pair<Float, Float>? = null
+            var bestScore = Double.NEGATIVE_INFINITY
+            for (i in 0 until lines.rows()) {
+                val v = lines.get(i, 0) ?: continue
+                if (v.size < 4) continue
+                val x1 = v[0] + left
+                val y1 = v[1] + top
+                val x2 = v[2] + left
+                val y2 = v[3] + top
+                val dx = x2 - x1
+                val dy = y2 - y1
+                val length = hypot(dx, dy)
+                if (length < radius * 2.2) continue
+                val ux = dx / length
+                val uy = dy / length
+                val t = (((cx - x1) * ux + (cy - y1) * uy) / length).coerceIn(0.0, 1.0)
+                val nearX = x1 + ux * length * t
+                val nearY = y1 + uy * length * t
+                val distance = hypot(cx - nearX, cy - nearY)
+                if (distance > radius * 2.6) continue
+                val farX: Double
+                val farY: Double
+                val d1 = hypot(cx - x1, cy - y1)
+                val d2 = hypot(cx - x2, cy - y2)
+                if (d1 >= d2) { farX = x1; farY = y1 } else { farX = x2; farY = y2 }
+                var vx = farX - cx
+                var vy = farY - cy
+                val norm = hypot(vx, vy)
+                if (norm < radius * 1.5) continue
+                vx /= norm; vy /= norm
+                val score = length - distance * 2.4 + (radius * 0.25)
+                if (score > bestScore) {
+                    bestScore = score
+                    best = Pair(vx.toFloat(), vy.toFloat())
+                }
+            }
+            return best
+        } finally {
+            lines.release()
+            roi.release()
         }
     }
 
