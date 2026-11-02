@@ -1,31 +1,46 @@
-name: Build Android APK
+name: Build and Test PoolAimAndroid
 on:
   push:
-    branches: [ "main" ]
+    branches:
+      - "feature/rea-clean-baseline"
   workflow_dispatch:
+
 permissions:
   contents: read
+
 jobs:
-  build:
+  verify-and-build:
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.13"
-      - name: Build debug APK
+
+      - name: Run unit tests
+        run: gradle testDebugUnitTest
+
+      - name: Assemble debug APK
         run: gradle assembleDebug
-      - name: Upload APK
+
+      - name: Verify APK exists
+        run: |
+          test -s app/build/outputs/apk/debug/app-debug.apk
+          sha256sum app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Upload installable debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: PoolAimAndroid-debug
+          name: PoolAimAndroid-rea-clean-baseline-debug
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
