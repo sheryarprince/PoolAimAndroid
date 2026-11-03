@@ -33,8 +33,6 @@ import com.poolaim.android.capture.CapturedRgbaFrame
 import com.poolaim.android.capture.LatestFrameMailbox
 import com.poolaim.android.engine.CalibratedTableTransform
 import com.poolaim.android.engine.FloatPoint
-import com.poolaim.android.vision.BallIdentity
-import com.poolaim.android.vision.BallKind
 import com.poolaim.android.vision.PoolAimProcessor
 import com.poolaim.android.vision.ProcessedPoolFrame
 import java.util.concurrent.atomic.AtomicBoolean
@@ -335,11 +333,10 @@ class OverlayCaptureService : Service() {
     private fun refreshStatus() {
         val scene = processedScene
         val guides = scene?.gameAimGuides?.size ?: 0
-        val cueVisible = scene?.scene?.balls?.any { it.ballId == BallIdentity.CUE } == true
-        val message = when {
-            guides > 0 -> "Game aiming guide detected · extending to cushion"
-            cueVisible -> "Cue ball visible · waiting for white game guide"
-            else -> "Waiting for an in-game cue ball and white aiming guide"
+        val message = if (guides > 0) {
+            "$guides white game guide stroke(s) detected · extending to table cushions"
+        } else {
+            "Waiting for visible white in-game guide strokes"
         }
         val text = "Pool Aim · guide extension" +
             "\nCaptured: $capturedFrameCount · processed: $processedFrameCount" +
@@ -357,32 +354,38 @@ class OverlayCaptureService : Service() {
             super.onDraw(canvas)
             val current = scene ?: return
             val table = current.scene.table ?: return
-            val cue = current.scene.balls.firstOrNull { it.ballId == BallIdentity.CUE } ?: return
             if (current.gameAimGuides.isEmpty()) return
 
-            val inset = cue.radius * 0.55f
             val bounds = RectF(
-                table.left + inset, table.top + inset,
-                table.right - inset, table.bottom - inset
+                table.left + 8f, table.top + 8f,
+                table.right - 8f, table.bottom - 8f
             )
-            // Draw only extensions of white guides that the game itself rendered.
-            current.gameAimGuides.forEach { direction ->
-                val start = FloatPoint(
-                    cue.center.x + direction.x * cue.radius * 0.92f,
-                    cue.center.y + direction.y * cue.radius * 0.92f
+            current.gameAimGuides.forEach { guide ->
+                val dx = guide.end.x - guide.start.x
+                val dy = guide.end.y - guide.start.y
+                val length = kotlin.math.sqrt(dx * dx + dy * dy)
+                if (length < 1f) return@forEach
+                val ux = dx / length
+                val uy = dy / length
+                val middle = FloatPoint(
+                    (guide.start.x + guide.end.x) * 0.5f,
+                    (guide.start.y + guide.end.y) * 0.5f
                 )
-                val edge = rayToTableEdge(
-                    start,
-                    FloatPoint(start.x + direction.x, start.y + direction.y),
-                    bounds
+                val firstEdge = rayToTableEdge(
+                    middle, FloatPoint(middle.x - ux, middle.y - uy), bounds
+                )
+                val secondEdge = rayToTableEdge(
+                    middle, FloatPoint(middle.x + ux, middle.y + uy), bounds
                 )
                 paint.style = Paint.Style.STROKE
                 paint.strokeWidth = dp(2).toFloat()
-                paint.color = Color.GREEN
+                paint.color = Color.rgb(0, 235, 225)
                 paint.pathEffect = DashPathEffect(
-                    floatArrayOf(dp(8).toFloat(), dp(5).toFloat()), 0f
+                    floatArrayOf(dp(9).toFloat(), dp(5).toFloat()), 0f
                 )
-                canvas.drawLine(start.x, start.y, edge.x, edge.y, paint)
+                canvas.drawLine(
+                    firstEdge.x, firstEdge.y, secondEdge.x, secondEdge.y, paint
+                )
             }
             paint.pathEffect = null
         }
