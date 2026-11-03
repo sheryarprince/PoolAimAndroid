@@ -19,7 +19,7 @@ class PoolScreenDetectorTest {
         }
         for (y in 30 until 170) for (x in 30 until 290) put(x, y, 20, 120, 65)
         for (y in 91..109) for (x in 141..159) {
-            if (sqrt(((x - 150) * (x - 150) + (y - 100) * (y - 100)).toDouble()) <= 9.0)
+            if (sqrt(((x - 150) * (x - 150) + (y - 100) * (y - 100)).toDouble()) <= 6.0)
                 put(x, y, 235, 235, 230)
         }
         val frame = CapturedRgbaFrame.fromPlaneBytes(bytes, width, height, width * 4, 4)
