@@ -19,8 +19,8 @@ data class GameAimGuideSegment(val start: FloatPoint, val end: FloatPoint)
  * are used only to limit the scan and later clip the extension.
  */
 class GameAimGuideDetector(
-    private val angleSteps: Int = 180,
-    private val minimumLengthPx: Float = 42f
+    private val angleSteps: Int = 90,
+    private val minimumLengthPx: Float = 35f
 ) {
     init { require(angleSteps >= 90) }
 
@@ -34,7 +34,11 @@ class GameAimGuideDetector(
         val rho: Float
     )
 
-    fun detect(frame: CapturedRgbaFrame, table: TableBounds): List<GameAimGuideSegment> {
+    fun detect(
+        frame: CapturedRgbaFrame,
+        table: TableBounds,
+        excludedAreas: List<TableBounds> = emptyList()
+    ): List<GameAimGuideSegment> {
         val left = (table.left + 8f).toInt().coerceAtLeast(0)
         val right = (table.right - 8f).toInt().coerceAtMost(frame.width - 1)
         val top = (table.top + 8f).toInt().coerceAtLeast(0)
@@ -47,8 +51,12 @@ class GameAimGuideDetector(
         while (y <= bottom) {
             var x = left
             while (x <= right) {
-                val p = frame.pixelAt(x, y)
-                if (isGuideWhite(p)) points.add(WhitePoint(x.toFloat(), y.toFloat()))
+                val excluded = excludedAreas.any {
+                    x >= it.left && x <= it.right && y >= it.top && y <= it.bottom
+                }
+                if (!excluded && isGuideWhite(frame.pixelAt(x, y))) {
+                    points.add(WhitePoint(x.toFloat(), y.toFloat()))
+                }
                 x += 2
             }
             y += 2
@@ -80,7 +88,8 @@ class GameAimGuideDetector(
         }
 
         val found = ArrayList<Candidate>()
-        repeat(8) {
+        for (iteration in 0 until 36) {
+            if (found.size >= 4) break
             var bestVotes = 0
             var bestA = -1
             var bestR = -1
@@ -95,7 +104,7 @@ class GameAimGuideDetector(
                     }
                 }
             }
-            if (bestA < 0 || bestVotes < 22) return@repeat
+            if (bestA < 0 || bestVotes < 14) break
 
             val c = cosTable[bestA]
             val s = sinTable[bestA]
@@ -114,7 +123,7 @@ class GameAimGuideDetector(
             var bestEnd = -1
             for (i in 1..projections.size) {
                 val split = i == projections.size ||
-                    projections[i] - projections[i - 1] > 8f
+                    projections[i] - projections[i - 1] > 5f
                 if (split) {
                     if (i > runStart && (bestStart < 0 ||
                             projections[i - 1] - projections[runStart] >
@@ -131,7 +140,8 @@ class GameAimGuideDetector(
                 val t1 = projections[bestEnd]
                 val length = t1 - t0
                 val density = (bestEnd - bestStart + 1).toFloat() / length.coerceAtLeast(1f)
-                if (length >= minimumLengthPx && density >= 0.28f) {
+                val maximumLength = minOf(table.width, table.height) * 0.45f
+                if (length >= minimumLengthPx && length <= maximumLength && density >= 0.45f) {
                     val originX = left + c * rho
                     val originY = top + s * rho
                     val dx = -s
@@ -141,12 +151,20 @@ class GameAimGuideDetector(
                         FloatPoint(originX + dx * t1, originY + dy * t1)
                     )
                     val angle = bestA * PI.toFloat() / angleSteps
-                    val duplicate = found.any {
+                    val middleX = (segment.start.x + segment.end.x) * 0.5f
+                    val middleY = (segment.start.y + segment.end.y) * 0.5f
+                    val duplicate = found.any { existing ->
                         val angleDiff = minOf(
-                            abs(it.angle - angle),
-                            PI.toFloat() - abs(it.angle - angle)
+                            abs(existing.angle - angle),
+                            PI.toFloat() - abs(existing.angle - angle)
                         )
-                        angleDiff < 0.10f && abs(it.rho - rho) < 12f
+                        val existingMiddleX = (existing.segment.start.x + existing.segment.end.x) * 0.5f
+                        val existingMiddleY = (existing.segment.start.y + existing.segment.end.y) * 0.5f
+                        val perpendicularDistance = abs(
+                            (middleX - existingMiddleX) * -sin(existing.angle) +
+                                (middleY - existingMiddleY) * cos(existing.angle)
+                        )
+                        angleDiff < 0.18f && perpendicularDistance < 20f
                     }
                     if (!duplicate) found.add(
                         Candidate(bestVotes, bestA, bestR, segment, angle, rho)
