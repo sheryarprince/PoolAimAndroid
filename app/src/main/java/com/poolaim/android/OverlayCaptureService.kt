@@ -346,6 +346,33 @@ class OverlayCaptureService : Service() {
                         )
                     }
                 }
+                val inset = maxOf(
+                    dp(2).toFloat(),
+                    current.scene.balls.map { it.radius }.average().takeIf { it.isFinite() }?.toFloat() ?: dp(8).toFloat()
+                )
+                val bounds = RectF(
+                    table.left + inset, table.top + inset,
+                    table.right - inset, table.bottom - inset
+                )
+
+                // Live cue-stick extensions are independent of shot solving.
+                // Draw them as soon as table + cue + shaft axis are detected.
+                val detectedCue = current.scene.balls.firstOrNull { it.ballId == BallIdentity.CUE }
+                val liveAxis = current.cueStickAxis
+                if (detectedCue != null && liveAxis != null) {
+                    val liveCenter = detectedCue.center
+                    val ends = lineToTableBounds(liveCenter, liveAxis, bounds)
+                    if (ends != null) {
+                        paint.style = Paint.Style.STROKE
+                        paint.strokeWidth = dp(2).toFloat()
+                        paint.color = Color.GREEN
+                        paint.pathEffect = DashPathEffect(floatArrayOf(dp(8).toFloat(), dp(5).toFloat()), 0f)
+                        canvas.drawLine(ends.first.x, ends.first.y, liveCenter.x, liveCenter.y, paint)
+                        canvas.drawLine(liveCenter.x, liveCenter.y, ends.second.x, ends.second.y, paint)
+                        paint.pathEffect = null
+                    }
+                }
+
                 val solution = current.solutions.firstOrNull()
                 if (solution != null) {
                     val transform = CalibratedTableTransform(table)
@@ -353,27 +380,6 @@ class OverlayCaptureService : Service() {
                     val ghost = transform.toScreen(solution.ghost)
                     val target = transform.toScreen(solution.objectTarget)
                     val pocket = transform.toScreen(solution.pocket)
-                    val inset = maxOf(dp(2).toFloat(),
-                        current.scene.balls.filter { it.ballId != null }.map { it.radius }.average().toFloat())
-                    val bounds = RectF(table.left + inset, table.top + inset, table.right - inset, table.bottom - inset)
-                    // Track the actual visible cue shaft on every captured frame.
-                    // Draw both opposite aim-line extensions from the cue-ball centre
-                    // to the playable cushion boundary.
-                    val detectedCue = current.scene.balls.firstOrNull { it.ballId == BallIdentity.CUE }
-                    val liveAxis = current.cueStickAxis
-                    if (detectedCue != null && liveAxis != null) {
-                        val liveCenter = detectedCue.center
-                        val ends = lineToTableBounds(liveCenter, liveAxis, bounds)
-                        if (ends != null) {
-                            paint.style = Paint.Style.STROKE
-                            paint.strokeWidth = dp(2).toFloat()
-                            paint.color = Color.GREEN
-                            paint.pathEffect = DashPathEffect(floatArrayOf(dp(8).toFloat(), dp(5).toFloat()), 0f)
-                            canvas.drawLine(ends.first.x, ends.first.y, liveCenter.x, liveCenter.y, paint)
-                            canvas.drawLine(liveCenter.x, liveCenter.y, ends.second.x, ends.second.y, paint)
-                            paint.pathEffect = null
-                        }
-                    }
                     paint.style = Paint.Style.STROKE
                     paint.strokeWidth = dp(2).toFloat()
                     paint.color = Color.YELLOW
