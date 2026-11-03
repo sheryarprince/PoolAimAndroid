@@ -374,23 +374,10 @@ class OverlayCaptureService : Service() {
                 table.left + 8f, table.top + 8f,
                 table.right - 8f, table.bottom - 8f
             )
-            current.gameAimGuides.forEach { guide ->
-                val dx = guide.end.x - guide.start.x
-                val dy = guide.end.y - guide.start.y
-                val length = kotlin.math.sqrt(dx * dx + dy * dy)
-                if (length < 1f) return@forEach
-                val ux = dx / length
-                val uy = dy / length
-                val middle = FloatPoint(
-                    (guide.start.x + guide.end.x) * 0.5f,
-                    (guide.start.y + guide.end.y) * 0.5f
-                )
-                val firstEdge = rayToTableEdge(
-                    middle, FloatPoint(middle.x - ux, middle.y - uy), bounds
-                )
-                val secondEdge = rayToTableEdge(
-                    middle, FloatPoint(middle.x + ux, middle.y + uy), bounds
-                )
+            current.gameAimGuides.take(2).forEach { guide ->
+                // Each detected guide is a one-sided ray starting at the reticle.
+                // Extend only forward along that ray; never draw the opposite axis.
+                val edge = rayToTableEdge(guide.start, guide.end, bounds)
                 paint.style = Paint.Style.STROKE
                 paint.strokeWidth = dp(2).toFloat()
                 paint.color = Color.rgb(0, 235, 225)
@@ -398,7 +385,7 @@ class OverlayCaptureService : Service() {
                     floatArrayOf(dp(9).toFloat(), dp(5).toFloat()), 0f
                 )
                 canvas.drawLine(
-                    firstEdge.x, firstEdge.y, secondEdge.x, secondEdge.y, paint
+                    guide.start.x, guide.start.y, edge.x, edge.y, paint
                 )
             }
             paint.pathEffect = null
