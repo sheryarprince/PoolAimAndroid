@@ -29,6 +29,9 @@ import android.widget.TextView
 import android.graphics.drawable.GradientDrawable
 import com.poolaim.android.capture.CapturedRgbaFrame
 import com.poolaim.android.capture.LatestFrameMailbox
+import com.poolaim.android.vision.PoolAimProcessor
+import com.poolaim.android.vision.ProcessedPoolFrame
+import com.poolaim.android.engine.CalibratedTableTransform
 
 class OverlayCaptureService : Service() {
     companion object {
@@ -48,6 +51,8 @@ class OverlayCaptureService : Service() {
     private var panel: LinearLayout? = null
     private var statusText: TextView? = null
     private val latestFrames = LatestFrameMailbox()
+    private val aimProcessor = PoolAimProcessor()
+    @Volatile private var processedScene: ProcessedPoolFrame? = null
     private var capturedFrameCount = 0L
     private var captureErrorCount = 0L
     private var lastSampleAt = 0L
@@ -119,6 +124,8 @@ class OverlayCaptureService : Service() {
                         lastSampleAt = now
                         val frame = CapturedRgbaFrame.copyFrom(image)
                         latestFrames.publish(frame)
+                        processedScene = aimProcessor.process(frame)
+                        statusBadge?.post { statusBadge?.scene = processedScene; statusBadge?.invalidate() }
                         capturedFrameCount++
                         refreshStatus()
                     }
@@ -262,11 +269,15 @@ class OverlayCaptureService : Service() {
 
     private fun refreshStatus() {
         val frameAvailability = if (latestFrames.peek() != null) "available" else "not available"
+        val scene = processedScene
         val text = "Captured frames: " + capturedFrameCount +
             "\nCapture errors: " + captureErrorCount +
-            "\nFrame sampling: up to 4 FPS (250 ms), matching the recovered AimPool capture cadence." +
+            "\nFrame sampling: up to 4 FPS (250 ms)." +
             "\nLatest raw RGBA frame: " + frameAvailability +
-            "\nBinary mask: not generated (thresholding unresolved)."
+            "\nTable: " + if (scene?.scene?.table != null) "candidate found" else "not found" +
+            "\nBall candidates: " + (scene?.scene?.balls?.size ?: 0) +
+            "\nAim candidates: " + (scene?.solutions?.size ?: 0) +
+            "\n" + (scene?.diagnostic ?: "Waiting for detector.")
         statusText?.post {
             statusText?.text = text
         }
@@ -279,9 +290,39 @@ class OverlayCaptureService : Service() {
     private inner class StatusBadgeView : View(this@OverlayCaptureService) {
         private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
         var frameCount: Long = 0L
+        var scene: ProcessedPoolFrame? = null
 
         override fun onDraw(canvas: Canvas) {
             super.onDraw(canvas)
+            val current = scene
+            val table = current?.scene?.table
+            if (table != null) {
+                paint.style = Paint.Style.STROKE
+                paint.strokeWidth = dp(2).toFloat()
+                paint.color = Color.CYAN
+                canvas.drawRect(table.left, table.top, table.right, table.bottom, paint)
+                paint.style = Paint.Style.FILL
+                current.scene.balls.forEach { ball ->
+                    paint.color = if (ball.isCueCandidate) Color.WHITE else Color.YELLOW
+                    canvas.drawCircle(ball.center.x, ball.center.y, ball.radius, paint)
+                }
+                val solution = current.solutions.firstOrNull()
+                if (solution != null) {
+                    val transform = CalibratedTableTransform(table)
+                    val cue = transform.toScreen(solution.cue)
+                    val ghost = transform.toScreen(solution.ghost)
+                    val target = transform.toScreen(solution.objectTarget)
+                    paint.style = Paint.Style.STROKE
+                    paint.strokeWidth = dp(2).toFloat()
+                    paint.color = Color.GREEN
+                    canvas.drawLine(cue.x, cue.y, ghost.x, ghost.y, paint)
+                    paint.color = Color.YELLOW
+                    canvas.drawLine(ghost.x, ghost.y, target.x, target.y, paint)
+                    paint.style = Paint.Style.FILL
+                    paint.color = Color.GREEN
+                    canvas.drawCircle(ghost.x, ghost.y, dp(4).toFloat(), paint)
+                }
+            }
             val left = dp(12).toFloat()
             val top = dp(12).toFloat()
             val badgeWidth = dp(236).toFloat()
