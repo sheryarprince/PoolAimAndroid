@@ -9,22 +9,26 @@ data class ProcessedPoolFrame(
     val scene: PoolScene,
     val solutions: List<ShotSolution>,
     val diagnostic: String,
-    val cueStickAxis: FloatPoint? = null
+    val gameAimGuides: List<FloatPoint> = emptyList()
 )
 
 class PoolAimProcessor(
     private val detector: PoolScreenDetector = PoolScreenDetector(),
     private val solver: GhostBallSolver = GhostBallSolver(),
-    private val cueStickDetector: CueStickAxisDetector = CueStickAxisDetector()
+    private val gameAimGuideDetector: GameAimGuideDetector = GameAimGuideDetector()
 ) {
     fun process(frame: CapturedRgbaFrame): ProcessedPoolFrame {
         val scene = detector.detect(frame)
-        if (scene.table == null) return ProcessedPoolFrame(scene, emptyList(), scene.diagnostic)
+        val table = scene.table
+            ?: return ProcessedPoolFrame(scene, emptyList(), scene.diagnostic)
         val cueCandidates = scene.balls.filter {
             it.ballId == BallIdentity.CUE && it.classificationConfidence >= 0.65f
         }
         if (cueCandidates.isEmpty()) {
-            return ProcessedPoolFrame(scene, emptyList(), "${scene.diagnostic}; cue ball not confidently identified")
+            return ProcessedPoolFrame(
+                scene, emptyList(),
+                "${scene.diagnostic}; waiting for cue ball and in-game white aiming guides"
+            )
         }
         val selectedCue = cueCandidates.maxByOrNull { it.classificationConfidence }!!
         val cleaned = if (cueCandidates.size > 1) {
@@ -32,14 +36,20 @@ class PoolAimProcessor(
                 it.ballId != BallIdentity.CUE || it === selectedCue
             })
         } else scene
-        val axis = cueStickDetector.detect(frame, selectedCue.center, selectedCue.radius, scene.table)
+
+        // The extension trigger is exclusively the game's own white guide line.
+        // No cue-stick appearance/colour or table-felt colour is used here.
+        val guides = gameAimGuideDetector.detect(
+            frame, selectedCue.center, selectedCue.radius, table
+        )
         val solutions = solver.solve(cleaned)
         val diagnostic = when {
-            solutions.isNotEmpty() -> "${cleaned.diagnostic}; ${solutions.size} collision-clear shot options"
+            guides.isNotEmpty() -> "${cleaned.diagnostic}; ${guides.size} in-game white aiming guide(s) detected"
+            solutions.isNotEmpty() -> "${cleaned.diagnostic}; no in-game white aiming guide visible"
             cleaned.balls.none { it.ballId?.let { id -> id in 1..15 } == true } ->
                 "${cleaned.diagnostic}; no numbered object balls identified"
-            else -> "${cleaned.diagnostic}; no collision-clear shot found"
+            else -> "${cleaned.diagnostic}; no collision-clear shot found; waiting for white aiming guide"
         }
-        return ProcessedPoolFrame(cleaned, solutions, diagnostic, axis)
+        return ProcessedPoolFrame(cleaned, solutions, diagnostic, guides)
     }
 }
