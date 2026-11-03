@@ -17,13 +17,12 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         projectionManager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-
         val layout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(36, 48, 36, 36)
         }
         layout.addView(TextView(this).apply {
-            text = "Pool Aim — REA Mechanics Scaffold\\n\\nThis build captures raw RGBA screen frames and contains independently tested implementations of the confirmed ARM64 mask-sampling and coordinate mechanics. The original binary-mask threshold and native scoring functions remain unresolved, so aim lines and bank-shot guesses are intentionally disabled."
+            text = "POOL AIM · 8 BALL POOL\n\nRecognizes the original trainer's ball IDs 0–15: cue, solids, eight ball and stripes. Uses full-ball appearance sampling, blue/green table recognition and a ghost-ball solver with cue-path and object-path obstruction checks.\n\nCushion physics, spin, power and game-play accuracy still require device validation."
             textSize = 17f
         })
         layout.addView(Button(this).apply {
@@ -35,7 +34,7 @@ class MainActivity : Activity() {
             }
         })
         layout.addView(Button(this).apply {
-            text = "Start raw capture"
+            text = "Start 8 Ball Pool recognition"
             setOnClickListener {
                 if (!Settings.canDrawOverlays(this@MainActivity)) {
                     startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + packageName)))
@@ -46,9 +45,7 @@ class MainActivity : Activity() {
         })
         layout.addView(Button(this).apply {
             text = "Stop capture"
-            setOnClickListener {
-                stopService(Intent(this@MainActivity, OverlayCaptureService::class.java))
-            }
+            setOnClickListener { stopService(Intent(this@MainActivity, OverlayCaptureService::class.java)) }
         })
         setContentView(layout)
     }

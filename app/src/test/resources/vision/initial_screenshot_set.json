@@ -1,0 +1,561 @@
+{
+  "schema_version": 1,
+  "coordinate_system": "original screenshot pixels; origin at top-left",
+  "identity_convention": "original Ghost Ball Trainer: cue=0, solids=1..7, eight=8, stripes=9..15",
+  "annotation_policy": "Only number identities visible on the ball are assigned. Unreadable identities are null; cue ball is marked only when the white cue marker is visually clear.",
+  "screenshots": [
+    {
+      "file": "77124.jpg",
+      "width": 1536,
+      "height": 709,
+      "table_bounds": [
+        236,
+        112,
+        1301,
+        700
+      ],
+      "balls": [
+        {
+          "x": 528,
+          "y": 632,
+          "radius": 15,
+          "id": 0,
+          "confidence": "high"
+        },
+        {
+          "x": 1009,
+          "y": 405,
+          "radius": 16,
+          "id": 9,
+          "confidence": "medium"
+        },
+        {
+          "x": 1032,
+          "y": 393,
+          "radius": 15,
+          "id": 4,
+          "confidence": "high"
+        },
+        {
+          "x": 1057,
+          "y": 379,
+          "radius": 15,
+          "id": 12,
+          "confidence": "high"
+        },
+        {
+          "x": 1081,
+          "y": 393,
+          "radius": 15,
+          "id": 1,
+          "confidence": "high"
+        },
+        {
+          "x": 1057,
+          "y": 408,
+          "radius": 15,
+          "id": 8,
+          "confidence": "high"
+        },
+        {
+          "x": 1105,
+          "y": 409,
+          "radius": 15,
+          "id": 6,
+          "confidence": "high"
+        },
+        {
+          "x": 1081,
+          "y": 422,
+          "radius": 15,
+          "id": 3,
+          "confidence": "high"
+        },
+        {
+          "x": 1032,
+          "y": 423,
+          "radius": 15,
+          "id": 15,
+          "confidence": "high"
+        },
+        {
+          "x": 1057,
+          "y": 436,
+          "radius": 15,
+          "id": 13,
+          "confidence": "high"
+        },
+        {
+          "x": 1107,
+          "y": 437,
+          "radius": 15,
+          "id": 2,
+          "confidence": "high"
+        },
+        {
+          "x": 1081,
+          "y": 451,
+          "radius": 15,
+          "id": 11,
+          "confidence": "high"
+        },
+        {
+          "x": 1107,
+          "y": 463,
+          "radius": 15,
+          "id": 5,
+          "confidence": "high"
+        },
+        {
+          "x": 1107,
+          "y": 350,
+          "radius": 15,
+          "id": 10,
+          "confidence": "high"
+        },
+        {
+          "x": 1105,
+          "y": 365,
+          "radius": 15,
+          "id": 14,
+          "confidence": "high"
+        },
+        {
+          "x": 1107,
+          "y": 379,
+          "radius": 15,
+          "id": 7,
+          "confidence": "high"
+        }
+      ]
+    },
+    {
+      "file": "77131.jpg",
+      "width": 1536,
+      "height": 608,
+      "table_bounds": [
+        236,
+        14,
+        1301,
+        599
+      ],
+      "balls": [
+        {
+          "x": 530,
+          "y": 305,
+          "radius": 16,
+          "id": 0,
+          "confidence": "medium"
+        },
+        {
+          "x": 1008,
+          "y": 305,
+          "radius": 15,
+          "id": 11,
+          "confidence": "high"
+        },
+        {
+          "x": 1032,
+          "y": 321,
+          "radius": 15,
+          "id": 1,
+          "confidence": "high"
+        },
+        {
+          "x": 1032,
+          "y": 292,
+          "radius": 15,
+          "id": 12,
+          "confidence": "high"
+        },
+        {
+          "x": 1057,
+          "y": 278,
+          "radius": 15,
+          "id": 4,
+          "confidence": "high"
+        },
+        {
+          "x": 1082,
+          "y": 293,
+          "radius": 15,
+          "id": 13,
+          "confidence": "high"
+        },
+        {
+          "x": 1083,
+          "y": 321,
+          "radius": 15,
+          "id": 9,
+          "confidence": "high"
+        },
+        {
+          "x": 1057,
+          "y": 307,
+          "radius": 15,
+          "id": 8,
+          "confidence": "high"
+        },
+        {
+          "x": 1057,
+          "y": 337,
+          "radius": 15,
+          "id": 10,
+          "confidence": "high"
+        },
+        {
+          "x": 1081,
+          "y": 264,
+          "radius": 15,
+          "id": 14,
+          "confidence": "high"
+        },
+        {
+          "x": 1108,
+          "y": 248,
+          "radius": 15,
+          "id": 2,
+          "confidence": "high"
+        },
+        {
+          "x": 1106,
+          "y": 278,
+          "radius": 15,
+          "id": 7,
+          "confidence": "high"
+        },
+        {
+          "x": 1108,
+          "y": 307,
+          "radius": 15,
+          "id": 5,
+          "confidence": "high"
+        },
+        {
+          "x": 1108,
+          "y": 335,
+          "radius": 15,
+          "id": 6,
+          "confidence": "high"
+        },
+        {
+          "x": 1083,
+          "y": 351,
+          "radius": 15,
+          "id": 15,
+          "confidence": "high"
+        },
+        {
+          "x": 1108,
+          "y": 363,
+          "radius": 15,
+          "id": 3,
+          "confidence": "high"
+        }
+      ]
+    },
+    {
+      "file": "77133.jpg",
+      "width": 1536,
+      "height": 709,
+      "table_bounds": [
+        236,
+        112,
+        1301,
+        700
+      ],
+      "balls": [
+        {
+          "x": 772,
+          "y": 403,
+          "radius": 15,
+          "id": 0,
+          "confidence": "high"
+        },
+        {
+          "x": 1007,
+          "y": 324,
+          "radius": 15,
+          "id": 1,
+          "confidence": "high"
+        },
+        {
+          "x": 1196,
+          "y": 326,
+          "radius": 16,
+          "id": 2,
+          "confidence": "high"
+        },
+        {
+          "x": 1015,
+          "y": 474,
+          "radius": 15,
+          "id": 8,
+          "confidence": "high"
+        },
+        {
+          "x": 1084,
+          "y": 421,
+          "radius": 15,
+          "id": 14,
+          "confidence": "high"
+        },
+        {
+          "x": 1135,
+          "y": 554,
+          "radius": 15,
+          "id": 6,
+          "confidence": "high"
+        },
+        {
+          "x": 1000,
+          "y": 620,
+          "radius": 15,
+          "id": 13,
+          "confidence": "high"
+        },
+        {
+          "x": 739,
+          "y": 240,
+          "radius": 15,
+          "id": null,
+          "confidence": "unknown"
+        }
+      ]
+    },
+    {
+      "file": "77200.jpg",
+      "width": 1536,
+      "height": 709,
+      "table_bounds": [
+        236,
+        112,
+        1301,
+        700
+      ],
+      "balls": [
+        {
+          "x": 415,
+          "y": 484,
+          "radius": 15,
+          "id": 0,
+          "confidence": "medium"
+        },
+        {
+          "x": 1040,
+          "y": 203,
+          "radius": 15,
+          "id": null,
+          "confidence": "unknown"
+        },
+        {
+          "x": 1176,
+          "y": 339,
+          "radius": 16,
+          "id": null,
+          "confidence": "unknown"
+        },
+        {
+          "x": 1156,
+          "y": 523,
+          "radius": 15,
+          "id": 3,
+          "confidence": "medium"
+        },
+        {
+          "x": 1108,
+          "y": 546,
+          "radius": 15,
+          "id": null,
+          "confidence": "unknown"
+        },
+        {
+          "x": 320,
+          "y": 608,
+          "radius": 14,
+          "id": null,
+          "confidence": "unknown"
+        }
+      ]
+    },
+    {
+      "file": "77463.jpg",
+      "width": 1536,
+      "height": 709,
+      "table_bounds": [
+        236,
+        112,
+        1301,
+        700
+      ],
+      "balls": [
+        {
+          "x": 829,
+          "y": 205,
+          "radius": 15,
+          "id": 0,
+          "confidence": "medium"
+        },
+        {
+          "x": 544,
+          "y": 295,
+          "radius": 16,
+          "id": 2,
+          "confidence": "medium"
+        },
+        {
+          "x": 351,
+          "y": 236,
+          "radius": 15,
+          "id": 11,
+          "confidence": "medium"
+        },
+        {
+          "x": 1093,
+          "y": 361,
+          "radius": 15,
+          "id": 5,
+          "confidence": "medium"
+        },
+        {
+          "x": 591,
+          "y": 539,
+          "radius": 14,
+          "id": 13,
+          "confidence": "medium"
+        },
+        {
+          "x": 340,
+          "y": 519,
+          "radius": 16,
+          "id": null,
+          "confidence": "unknown"
+        },
+        {
+          "x": 388,
+          "y": 522,
+          "radius": 14,
+          "id": null,
+          "confidence": "unknown"
+        }
+      ]
+    },
+    {
+      "file": "77507.jpg",
+      "width": 1536,
+      "height": 709,
+      "table_bounds": [
+        236,
+        112,
+        1301,
+        700
+      ],
+      "balls": [
+        {
+          "x": 1187,
+          "y": 403,
+          "radius": 15,
+          "id": 0,
+          "confidence": "high"
+        },
+        {
+          "x": 871,
+          "y": 404,
+          "radius": 15,
+          "id": 1,
+          "confidence": "medium"
+        },
+        {
+          "x": 365,
+          "y": 606,
+          "radius": 14,
+          "id": 2,
+          "confidence": "medium"
+        },
+        {
+          "x": 314,
+          "y": 562,
+          "radius": 14,
+          "id": 8,
+          "confidence": "medium"
+        },
+        {
+          "x": 422,
+          "y": 494,
+          "radius": 16,
+          "id": null,
+          "confidence": "unknown"
+        },
+        {
+          "x": 335,
+          "y": 626,
+          "radius": 14,
+          "id": null,
+          "confidence": "unknown"
+        }
+      ]
+    },
+    {
+      "file": "77726.jpg",
+      "width": 1536,
+      "height": 709,
+      "table_bounds": [
+        236,
+        112,
+        1301,
+        700
+      ],
+      "balls": [
+        {
+          "x": 743,
+          "y": 202,
+          "radius": 15,
+          "id": 0,
+          "confidence": "medium"
+        },
+        {
+          "x": 677,
+          "y": 211,
+          "radius": 15,
+          "id": 10,
+          "confidence": "medium"
+        },
+        {
+          "x": 387,
+          "y": 321,
+          "radius": 15,
+          "id": 2,
+          "confidence": "medium"
+        },
+        {
+          "x": 495,
+          "y": 389,
+          "radius": 15,
+          "id": 6,
+          "confidence": "medium"
+        },
+        {
+          "x": 1212,
+          "y": 601,
+          "radius": 15,
+          "id": 8,
+          "confidence": "medium"
+        },
+        {
+          "x": 434,
+          "y": 320,
+          "radius": 15,
+          "id": null,
+          "confidence": "unknown"
+        },
+        {
+          "x": 858,
+          "y": 604,
+          "radius": 14,
+          "id": null,
+          "confidence": "unknown"
+        }
+      ]
+    }
+  ]
+}

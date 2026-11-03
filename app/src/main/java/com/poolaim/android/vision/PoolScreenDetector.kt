@@ -2,117 +2,278 @@ package com.poolaim.android.vision
 
 import com.poolaim.android.capture.CapturedRgbaFrame
 import com.poolaim.android.engine.FloatPoint
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.sqrt
 
 data class TableBounds(val left: Float, val top: Float, val right: Float, val bottom: Float) {
     val width get() = right - left
     val height get() = bottom - top
 }
-data class DetectedBall(val center: FloatPoint, val radius: Float, val confidence: Float, val isCueCandidate: Boolean = false)
-data class PoolScene(
-    val table: TableBounds?, val balls: List<DetectedBall>, val confidence: Float,
-    val frameWidth: Int, val frameHeight: Int, val diagnostic: String
+
+data class DetectedBall(
+    val center: FloatPoint,
+    val radius: Float,
+    val confidence: Float,
+    val ballId: Int? = null,
+    val kind: BallKind = BallKind.UNKNOWN,
+    val classificationConfidence: Float = 0f,
+    val whiteFraction: Float = 0f,
+    val darkFraction: Float = 0f
 )
 
-/** Conservative first-stage detector: green cloth envelope + circular non-cloth candidates.
- * Coordinates are captured-screen pixels. It does not classify ball numbers or infer pockets.
+data class PoolScene(
+    val table: TableBounds?,
+    val balls: List<DetectedBall>,
+    val confidence: Float,
+    val frameWidth: Int,
+    val frameHeight: Int,
+    val diagnostic: String
+)
+
+/**
+ * Detects the felt envelope (blue or green) and circle boundaries by radial
+ * edge contrast. Unlike the first prototype, this is not tied to green tables
+ * and does not use a single centre pixel to identify the cue ball.
+ *
+ * Coordinates are captured-screen pixels. Numbered identities are supplied
+ * by BallAppearanceClassifier and remain null when visual evidence is weak.
  */
-class PoolScreenDetector(private val sampleStep: Int = 2) {
-    init { require(sampleStep in 1..6) }
+class PoolScreenDetector(
+    private val sampleStep: Int = 2,
+    private val classifier: BallAppearanceClassifier = BallAppearanceClassifier()
+) {
+    init { require(sampleStep in 1..4) }
+
+    private data class ComponentBounds(
+        val left: Int, val top: Int, val right: Int, val bottom: Int,
+        val count: Int
+    )
+    private data class CircleCandidate(
+        val center: FloatPoint,
+        val radius: Float,
+        val edgeScore: Float,
+        val insideScore: Float
+    )
 
     fun detect(frame: CapturedRgbaFrame): PoolScene {
         val w = (frame.width + sampleStep - 1) / sampleStep
         val h = (frame.height + sampleStep - 1) / sampleStep
-        if (w < 40 || h < 40) return empty(frame, "Frame too small")
-        val green = BooleanArray(w * h)
-        var count = 0
-        var minX = w; var minY = h; var maxX = -1; var maxY = -1
-        for (gy in 0 until h) for (gx in 0 until w) {
-            val p = frame.pixelAt(gx * sampleStep, gy * sampleStep) ?: continue
-            if (p.green > 48 && p.green > p.red * 1.12 &&
-                p.green > p.blue * 1.07 && p.green - p.red > 14) {
-                green[gy * w + gx] = true
-                count++
-                minX = min(minX, gx); minY = min(minY, gy)
-                maxX = max(maxX, gx); maxY = max(maxY, gy)
-            }
-        }
-        if (count < w * h * 0.025 || maxX <= minX || maxY <= minY)
-            return empty(frame, "Green table not confidently found")
-        val bw = maxX - minX + 1
-        val bh = maxY - minY + 1
-        val aspect = bw.toFloat() / bh
-        val fill = count.toFloat() / (bw * bh)
-        if (aspect !in 1.45f..2.35f || fill < 0.22f)
-            return empty(frame, "Green region is not a plausible pool-table surface")
-        val table = TableBounds(minX * sampleStep.toFloat(), minY * sampleStep.toFloat(),
-            min(frame.width.toFloat(), (maxX + 1) * sampleStep.toFloat()),
-            min(frame.height.toFloat(), (maxY + 1) * sampleStep.toFloat()))
-        val balls = findCircularComponents(frame, green, w, h, minX, minY, maxX, maxY, table)
-        val confidence = (0.45f + 0.35f * fill.coerceIn(0f, 1f) +
-            0.20f * (1f - kotlin.math.abs(aspect - 2f) / 0.55f).coerceIn(0f, 1f)).coerceIn(0f, 1f)
-        return PoolScene(table, balls, confidence, frame.width, frame.height,
-            "Cloth envelope found; " + balls.size + " circular candidates (unclassified)")
-    }
+        if (w < 80 || h < 60) return empty(frame, "Frame too small for table recognition")
 
-    private fun findCircularComponents(
-        frame: CapturedRgbaFrame, green: BooleanArray, w: Int, h: Int,
-        left: Int, top: Int, right: Int, bottom: Int, table: TableBounds
-    ): List<DetectedBall> {
-        val seen = BooleanArray(w * h)
-        val queue = IntArray(w * h)
-        val result = ArrayList<DetectedBall>()
-        val minDiameter = table.width * 0.018f / sampleStep
-        val maxDiameter = table.width * 0.070f / sampleStep
-        for (y in top + 2 until bottom - 1) for (x in left + 2 until right - 1) {
-            val start = y * w + x
-            if (seen[start] || green[start]) continue
-            val pix = frame.pixelAt(x * sampleStep, y * sampleStep) ?: continue
-            if (pix.alpha < 100 || max(pix.red, max(pix.green, pix.blue)) < 75) {
-                seen[start] = true; continue
-            }
-            var head = 0; var tail = 0
-            queue[tail++] = start; seen[start] = true
-            var minCx = x; var maxCx = x; var minCy = y; var maxCy = y
-            var sumX = 0L; var sumY = 0L; var n = 0
-            while (head < tail) {
-                val idx = queue[head++]
-                val cx = idx % w; val cy = idx / w
-                minCx = min(minCx, cx); maxCx = max(maxCx, cx)
-                minCy = min(minCy, cy); maxCy = max(maxCy, cy)
-                sumX += cx; sumY += cy; n++
-                val ns = intArrayOf(idx - 1, idx + 1, idx - w, idx + w)
-                for (ni in ns) {
-                    if (ni < 0 || ni >= w * h || seen[ni] || green[ni]) continue
-                    val nx = ni % w; val ny = ni / w
-                    if (nx !in left + 1 until right || ny !in top + 1 until bottom) continue
-                    val q = frame.pixelAt(nx * sampleStep, ny * sampleStep) ?: continue
-                    if (q.alpha < 100 || max(q.red, max(q.green, q.blue)) < 75) continue
-                    seen[ni] = true
-                    if (tail < queue.size) queue[tail++] = ni
+        val cloth = BooleanArray(w * h)
+        var clothCount = 0
+        for (gy in 0 until h) {
+            val y = gy * sampleStep
+            for (gx in 0 until w) {
+                val p = frame.pixelAt(gx * sampleStep, y) ?: continue
+                if (isCloth(p.red, p.green, p.blue)) {
+                    cloth[gy * w + gx] = true
+                    clothCount++
                 }
             }
-            val cw = maxCx - minCx + 1
-            val ch = maxCy - minCy + 1
-            val diameter = (cw + ch) * 0.5f
-            val ratio = cw.toFloat() / ch.coerceAtLeast(1)
-            if (n < 5 || diameter !in minDiameter..maxDiameter || ratio !in 0.68f..1.45f) continue
-            val circularity = (min(cw, ch).toFloat() / max(cw, ch)).coerceIn(0f, 1f)
-            val sizeScore = (1f - kotlin.math.abs(diameter - (minDiameter + maxDiameter) / 2f) /
-                ((maxDiameter - minDiameter) / 2f)).coerceIn(0f, 1f)
-            val centerX = ((sumX.toFloat() / n + 0.5f) * sampleStep).toInt().coerceIn(0, frame.width - 1)
-            val centerY = ((sumY.toFloat() / n + 0.5f) * sampleStep).toInt().coerceIn(0, frame.height - 1)
-            val centerPixel = frame.pixelAt(centerX, centerY)
-            val whiteCue = centerPixel != null && centerPixel.red > 190 &&
-                centerPixel.green > 190 && centerPixel.blue > 175 &&
-                kotlin.math.abs(centerPixel.red - centerPixel.green) < 55 &&
-                kotlin.math.abs(centerPixel.green - centerPixel.blue) < 65
-            result.add(DetectedBall(FloatPoint(centerX.toFloat(), centerY.toFloat()),
-                diameter * sampleStep * 0.5f,
-                (0.55f * circularity + 0.45f * sizeScore).coerceIn(0f, 1f), whiteCue))
         }
-        return result.sortedByDescending { it.confidence }.take(16)
+        if (clothCount < w * h * 0.055f) {
+            return empty(frame, "No blue/green pool-table felt found")
+        }
+
+        val bounds = largestComponent(cloth, w, h)
+            ?: return empty(frame, "Felt regions are too fragmented")
+        val bw = bounds.right - bounds.left + 1
+        val bh = bounds.bottom - bounds.top + 1
+        val aspect = bw.toFloat() / bh.coerceAtLeast(1)
+        val fill = bounds.count.toFloat() / (bw * bh).coerceAtLeast(1)
+        if (bw < w * 0.35f || bh < h * 0.25f || aspect !in 1.35f..2.45f || fill < 0.26f) {
+            return empty(frame, "Largest felt region is not a plausible pool table")
+        }
+
+        val table = TableBounds(
+            (bounds.left * sampleStep).toFloat(),
+            (bounds.top * sampleStep).toFloat(),
+            min(frame.width, (bounds.right + 1) * sampleStep).toFloat(),
+            min(frame.height, (bounds.bottom + 1) * sampleStep).toFloat()
+        )
+        val circles = findCircles(frame, table)
+        val balls = circles.map { c ->
+            val classified = classifier.classify(frame, c.center, c.radius)
+            DetectedBall(
+                center = c.center,
+                radius = c.radius,
+                confidence = (0.55f * c.edgeScore + 0.45f * c.insideScore).coerceIn(0f, 1f),
+                ballId = classified.ballId,
+                kind = classified.kind,
+                classificationConfidence = classified.confidence,
+                whiteFraction = classified.whiteFraction,
+                darkFraction = classified.darkFraction
+            )
+        }
+        val tableConfidence = (
+            0.40f + 0.30f * fill.coerceIn(0f, 1f) +
+                0.30f * (1f - abs(aspect - 2f) / 0.65f).coerceIn(0f, 1f)
+            ).coerceIn(0f, 1f)
+        val identified = balls.count { it.ballId != null }
+        val cueCount = balls.count { it.ballId == BallIdentity.CUE }
+        val message = "Table found; ${balls.size} ball candidates, ${identified} identified, ${cueCount} cue ball(s)"
+        return PoolScene(table, balls, tableConfidence, frame.width, frame.height, message)
+    }
+
+    private fun largestComponent(mask: BooleanArray, width: Int, height: Int): ComponentBounds? {
+        val visited = BooleanArray(mask.size)
+        val queue = IntArray(mask.size)
+        var best: ComponentBounds? = null
+        for (start in mask.indices) {
+            if (!mask[start] || visited[start]) continue
+            var head = 0
+            var tail = 0
+            queue[tail++] = start
+            visited[start] = true
+            var left = start % width
+            var right = left
+            var top = start / width
+            var bottom = top
+            while (head < tail) {
+                val index = queue[head++]
+                val x = index % width
+                val y = index / width
+                left = min(left, x); right = max(right, x)
+                top = min(top, y); bottom = max(bottom, y)
+                val neighbors = intArrayOf(
+                    if (x > 0) index - 1 else -1,
+                    if (x + 1 < width) index + 1 else -1,
+                    if (y > 0) index - width else -1,
+                    if (y + 1 < height) index + width else -1
+                )
+                for (next in neighbors) {
+                    if (next >= 0 && mask[next] && !visited[next]) {
+                        visited[next] = true
+                        queue[tail++] = next
+                    }
+                }
+            }
+            if (best == null || tail > best.count) {
+                best = ComponentBounds(left, top, right, bottom, tail)
+            }
+        }
+        return best
+    }
+
+    private fun findCircles(frame: CapturedRgbaFrame, table: TableBounds): List<CircleCandidate> {
+        val radius = table.width * 0.016f
+        if (radius < 5f) return emptyList()
+        val candidates = ArrayList<CircleCandidate>()
+        val left = (table.left + radius * 1.45f).toInt()
+        val right = (table.right - radius * 1.45f).toInt()
+        val top = (table.top + radius * 1.45f).toInt()
+        val bottom = (table.bottom - radius * 1.45f).toInt()
+
+        var y = top
+        while (y <= bottom) {
+            var x = left
+            while (x <= right) {
+                val score = circleScore(frame, x.toFloat(), y.toFloat(), radius)
+                if (score.first > 0.28f && score.second > 0.48f) {
+                    // A local 3x3 refinement reduces the quantisation error from
+                    // the coarse grid without increasing the full-frame cost.
+                    var bestX = x
+                    var bestY = y
+                    var bestScore = score
+                    for (dy in -2..2 step 2) for (dx in -2..2 step 2) {
+                        val refined = circleScore(frame, (x + dx).toFloat(), (y + dy).toFloat(), radius)
+                        if (refined.first * refined.second > bestScore.first * bestScore.second) {
+                            bestX = x + dx
+                            bestY = y + dy
+                            bestScore = refined
+                        }
+                    }
+                    candidates.add(
+                        CircleCandidate(
+                            FloatPoint(bestX.toFloat(), bestY.toFloat()),
+                            radius,
+                            bestScore.first,
+                            bestScore.second
+                        )
+                    )
+                }
+                x += 4
+            }
+            y += 4
+        }
+
+        // Greedy non-maximum suppression. Touching pool balls are about 2R
+        // apart, so the exclusion distance is deliberately below that value.
+        val selected = ArrayList<CircleCandidate>()
+        for (candidate in candidates.sortedByDescending { it.edgeScore * it.insideScore }) {
+            if (selected.none {
+                    distance(it.center, candidate.center) < radius * 1.18f
+                }) {
+                selected.add(candidate)
+                if (selected.size == 16) break
+            }
+        }
+        return selected
+    }
+
+    /** Returns edge contrast and the proportion of inner samples that are not felt. */
+    private fun circleScore(
+        frame: CapturedRgbaFrame,
+        cx: Float,
+        cy: Float,
+        radius: Float
+    ): Pair<Float, Float> {
+        var contrast = 0f
+        var strongEdges = 0
+        var innerCount = 0
+        var nonCloth = 0
+        for (i in 0 until 16) {
+            val angle = i * (Math.PI * 2.0 / 16.0)
+            val dx = kotlin.math.cos(angle).toFloat()
+            val dy = kotlin.math.sin(angle).toFloat()
+            val inner = frame.pixelAt(
+                (cx + dx * radius * 0.78f).toInt(),
+                (cy + dy * radius * 0.78f).toInt()
+            ) ?: continue
+            val outer = frame.pixelAt(
+                (cx + dx * radius * 1.24f).toInt(),
+                (cy + dy * radius * 1.24f).toInt()
+            ) ?: continue
+            val difference = (
+                abs(inner.red - outer.red) +
+                    abs(inner.green - outer.green) +
+                    abs(inner.blue - outer.blue)
+                ) / 3f
+            contrast += difference
+            if (difference > 28f) strongEdges++
+
+            val inside = frame.pixelAt(
+                (cx + dx * radius * 0.35f).toInt(),
+                (cy + dy * radius * 0.35f).toInt()
+            )
+            if (inside != null) {
+                innerCount++
+                if (!isCloth(inside.red, inside.green, inside.blue)) nonCloth++
+            }
+        }
+        if (innerCount == 0) return 0f to 0f
+        val meanContrast = contrast / 16f
+        val edgeScore = (meanContrast / 88f).coerceIn(0f, 1f) *
+            (strongEdges / 16f).coerceIn(0f, 1f)
+        val insideScore = nonCloth.toFloat() / innerCount
+        return edgeScore to insideScore
+    }
+
+    private fun isCloth(r: Int, g: Int, b: Int): Boolean {
+        val blueFelt = b > 105 && g > 68 && b > g * 1.08f &&
+            g > r * 1.24f && b - r > 48
+        val greenFelt = g > 48 && g > r * 1.12f &&
+            g > b * 1.04f && g - r > 12
+        return blueFelt || greenFelt
+    }
+
+    private fun distance(a: FloatPoint, b: FloatPoint): Float {
+        val dx = a.x - b.x
+        val dy = a.y - b.y
+        return sqrt(dx * dx + dy * dy)
     }
 
     private fun empty(frame: CapturedRgbaFrame, reason: String) =
