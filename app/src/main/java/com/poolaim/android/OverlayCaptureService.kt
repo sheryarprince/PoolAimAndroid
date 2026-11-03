@@ -356,14 +356,26 @@ class OverlayCaptureService : Service() {
                     val inset = maxOf(dp(2).toFloat(),
                         current.scene.balls.filter { it.ballId != null }.map { it.radius }.average().toFloat())
                     val bounds = RectF(table.left + inset, table.top + inset, table.right - inset, table.bottom - inset)
-                    // Extend cue-ball aiming direction through the ghost point to the first cushion.
-                    val railEnd = rayToTableEdge(cue, ghost, bounds)
+                    // Track the actual visible cue shaft on every captured frame.
+                    // Draw both opposite aim-line extensions from the cue-ball centre
+                    // to the playable cushion boundary.
+                    val detectedCue = current.scene.balls.firstOrNull { it.ballId == BallIdentity.CUE }
+                    val liveAxis = current.cueStickAxis
+                    if (detectedCue != null && liveAxis != null) {
+                        val liveCenter = detectedCue.center
+                        val ends = lineToTableBounds(liveCenter, liveAxis, bounds)
+                        if (ends != null) {
+                            paint.style = Paint.Style.STROKE
+                            paint.strokeWidth = dp(2).toFloat()
+                            paint.color = Color.GREEN
+                            paint.pathEffect = DashPathEffect(floatArrayOf(dp(8).toFloat(), dp(5).toFloat()), 0f)
+                            canvas.drawLine(ends.first.x, ends.first.y, liveCenter.x, liveCenter.y, paint)
+                            canvas.drawLine(liveCenter.x, liveCenter.y, ends.second.x, ends.second.y, paint)
+                            paint.pathEffect = null
+                        }
+                    }
                     paint.style = Paint.Style.STROKE
                     paint.strokeWidth = dp(2).toFloat()
-                    paint.color = Color.GREEN
-                    paint.pathEffect = DashPathEffect(floatArrayOf(dp(8).toFloat(), dp(5).toFloat()), 0f)
-                    canvas.drawLine(cue.x, cue.y, railEnd.x, railEnd.y, paint)
-                    paint.pathEffect = null
                     paint.color = Color.YELLOW
                     canvas.drawLine(ghost.x, ghost.y, target.x, target.y, paint)
                     if (solution.bankPoint != null) {
@@ -396,6 +408,35 @@ class OverlayCaptureService : Service() {
             paint.color = Color.WHITE
             paint.textSize = dp(12).toFloat()
             canvas.drawText("POOL AIM · IDS · $frameCount", left + dp(10), top + dp(22), paint)
+        }
+
+        /** Returns the two cushion intersections of an infinite line through origin. */
+        private fun lineToTableBounds(
+            origin: FloatPoint,
+            axis: FloatPoint,
+            r: RectF
+        ): Pair<FloatPoint, FloatPoint>? {
+            val magnitude = kotlin.math.hypot(axis.x, axis.y)
+            if (!magnitude.isFinite() || magnitude < 0.001f) return null
+            val dx = axis.x / magnitude
+            val dy = axis.y / magnitude
+            var low = Float.NEGATIVE_INFINITY
+            var high = Float.POSITIVE_INFINITY
+            if (abs(dx) > 0.0001f) {
+                val a = (r.left - origin.x) / dx
+                val b = (r.right - origin.x) / dx
+                low = maxOf(low, minOf(a, b))
+                high = minOf(high, maxOf(a, b))
+            } else if (origin.x !in r.left..r.right) return null
+            if (abs(dy) > 0.0001f) {
+                val a = (r.top - origin.y) / dy
+                val b = (r.bottom - origin.y) / dy
+                low = maxOf(low, minOf(a, b))
+                high = minOf(high, maxOf(a, b))
+            } else if (origin.y !in r.top..r.bottom) return null
+            if (!low.isFinite() || !high.isFinite() || low >= high) return null
+            return FloatPoint(origin.x + dx * low, origin.y + dy * low) to
+                FloatPoint(origin.x + dx * high, origin.y + dy * high)
         }
 
         /** Intersects a forward ray with the first inset table/cushion edge. */
