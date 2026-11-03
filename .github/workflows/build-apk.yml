@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - "feature/rea-clean-baseline"
+      - "feature/rea-phase2-native"
   workflow_dispatch:
 
 permissions:
@@ -40,7 +41,7 @@ jobs:
       - name: Upload installable debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: PoolAimAndroid-rea-clean-baseline-debug
+          name: PoolAimAndroid-phase2-debug
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
