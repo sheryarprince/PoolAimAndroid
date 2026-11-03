@@ -39,7 +39,7 @@ class BallAppearanceClassifier {
         var chromatic = 0
         val votes = IntArray(8)
         val valueSums = FloatArray(8)
-        val extent = radius * 0.88f
+        val extent = radius * 0.98f
 
         // Golden-angle points are approximately uniform by area. Sampling is
         // deterministic, reproducible on-device, and skips the centre number
@@ -47,7 +47,7 @@ class BallAppearanceClassifier {
         val count = 96
         val goldenAngle = 2.39996323
         for (i in 0 until count) {
-            val rho = sqrt((i + 0.5) / count.toDouble()).toFloat() * 0.93f
+            val rho = sqrt((i + 0.5) / count.toDouble()).toFloat() * 0.98f
             if (rho < 0.28f) continue
             val angle = i * goldenAngle
             val nx = (kotlin.math.cos(angle) * rho).toFloat()
