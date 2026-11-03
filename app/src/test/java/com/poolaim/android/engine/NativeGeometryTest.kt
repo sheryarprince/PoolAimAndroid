@@ -194,4 +194,128 @@ class NativeGeometryTest {
         )
         assertEquals(IntPoint(12, -4), transform.toJavaPoint(FloatPoint(5f, -5f)))
     }
+@Test
+fun nativeInitialAngleScheduleUsesCoarseAndCardinalFineSteps() {
+    val angles = NativeAngleSchedule.initialScan().toList()
+
+    assertEquals(0f, angles.first(), 0f)
+    assertEquals(0.1f, angles[1], 0.00001f)
+    assertEquals(1f, angles[10], 0.00001f)
+    assertEquals(1.5f, angles[11], 0.00001f)
+    assertTrue(angles.contains(88.5f))
+    assertTrue(angles.contains(89f))
+    assertTrue(angles.contains(89.1f))
+    assertTrue(angles.contains(91f))
+    assertTrue(angles.contains(178.5f))
+    assertTrue(angles.contains(179f))
+    assertTrue(angles.contains(181.5f))
+    assertTrue(angles.contains(268.5f))
+    assertTrue(angles.contains(269f))
+    assertTrue(angles.contains(271f))
+    assertTrue(angles.contains(358.5f))
+    assertTrue(angles.contains(359f))
+    assertTrue(angles.last() < 360f)
+    assertFalse(angles.contains(360f))
 }
+
+@Test
+fun nativeLocalAngleRefinementScansBestAngleWindowAndSkipsLowAngles() {
+    assertTrue(NativeAngleSchedule.localRefinement(0.5f).none())
+
+    val angles = NativeAngleSchedule.localRefinement(45f).toList()
+    assertEquals(20, angles.size)
+    assertEquals(44f, angles.first(), 0f)
+    assertTrue(angles.last() < 46f)
+    assertEquals(45.9f, angles.last(), 0.001f)
+
+    val capped = NativeAngleSchedule.localRefinement(359.5f).toList()
+    assertEquals(15, capped.size)
+    assertEquals(358.5f, capped.first(), 0f)
+    assertTrue(capped.last() < 360f)
+}
+
+
+    @Test
+    fun primarySearchUsesPerpendicularRetryOffsetsInNativeOrder() {
+        val seen = mutableListOf<FloatPoint>()
+        val acceptedPoint = FloatPoint(32f, 21f)
+        val validator = CandidatePointValidator { _, point ->
+            seen += point
+            val accepted = point == acceptedPoint
+            RadialValidation(
+                accepted = accepted,
+                reason = if (accepted) null else RadialRejectReason.INSUFFICIENT_OUTER_RING,
+                outerHits = 0,
+                innerHits = 0,
+                hits9x9 = 0,
+                hits16x16 = 0
+            )
+        }
+
+        val result = PrimaryCandidateEnumerator(validator).searchFirstAccepted(
+            mask = BinaryMaskView(ByteArray(64 * 64), 64, 64),
+            basePoint = FloatPoint(20f, 20f),
+            angleDegrees = 0f,
+            baselineDistance = 12f
+        )
+
+        assertEquals(
+            listOf(
+                FloatPoint(32f, 20f),
+                FloatPoint(32f, 17f),
+                FloatPoint(32f, 18f),
+                FloatPoint(32f, 19f),
+                FloatPoint(32f, 21f)
+            ),
+            seen
+        )
+        assertNotNull(result)
+        assertEquals(1, result!!.perpendicularRetryOffset)
+        assertEquals(acceptedPoint, result.point)
+        assertEquals(IntPoint(32, 21), result.storedPointByTruncation)
+    }
+    @Test
+    fun raySamplerContinuesAfterOneOrTwoMissesUntilThreeConsecutiveMisses() {
+        val bytes = ByteArray(10)
+        for (x in 0..2) bytes[x] = 0xff.toByte()
+        bytes[4] = 0xff.toByte()
+        bytes[5] = 0xff.toByte()
+        val oneMissThenTwoMisses = DirectionalRaySampler().trace(
+            BinaryMaskView(bytes, 10, 1), FloatPoint(0f, 0f), 1f, 0f
+        )
+        assertEquals(RayStopReason.THREE_CONSECUTIVE_MISSES, oneMissThenTwoMisses.stopReason)
+        assertEquals(IntPoint(5, 0), oneMissThenTwoMisses.lastMatchingPixel)
+        assertEquals(9, oneMissThenTwoMisses.samplesExamined)
+
+        val twoMissesThenRun = ByteArray(10)
+        for (x in 0..2) twoMissesThenRun[x] = 0xff.toByte()
+        twoMissesThenRun[5] = 0xff.toByte()
+        twoMissesThenRun[6] = 0xff.toByte()
+        val twoMisses = DirectionalRaySampler().trace(
+            BinaryMaskView(twoMissesThenRun, 10, 1), FloatPoint(0f, 0f), 1f, 0f
+        )
+        assertEquals(RayStopReason.THREE_CONSECUTIVE_MISSES, twoMisses.stopReason)
+        assertEquals(IntPoint(6, 0), twoMisses.lastMatchingPixel)
+        assertEquals(10, twoMisses.samplesExamined)
+    }
+
+    @Test
+    fun raySamplerRoundsNonIntegerCoordinatesWithFcvtasAndHandlesEmptyMasks() {
+        val bytes = ByteArray(7 * 4)
+        bytes[2 * 7 + 2] = 0xff.toByte()
+        bytes[2 * 7 + 3] = 0xff.toByte()
+        val rounded = DirectionalRaySampler().trace(
+            BinaryMaskView(bytes, 7, 4), FloatPoint(1.5f, 1.5f), 1f, 0f
+        )
+        assertEquals(IntPoint(3, 2), rounded.lastMatchingPixel)
+        assertEquals(RayStopReason.THREE_CONSECUTIVE_MISSES, rounded.stopReason)
+
+        val empty = DirectionalRaySampler().trace(
+            BinaryMaskView(ByteArray(8 * 4), 8, 4), FloatPoint(2f, 2f), 1f, 0f
+        )
+        assertNull(empty.lastMatchingPixel)
+        assertEquals(0f, empty.distanceFromOrigin, 0f)
+        assertEquals(RayStopReason.THREE_CONSECUTIVE_MISSES, empty.stopReason)
+        }
+}
+
