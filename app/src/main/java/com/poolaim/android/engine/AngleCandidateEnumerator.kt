@@ -65,7 +65,7 @@ class AngleCandidateEnumerator(
 
     /** Trace geometric candidates from the recovered first-pass angle schedule. */
     fun enumerateInitialScan(mask: BinaryMaskView, seed: FloatPoint): Sequence<AngleRayCandidate> =
-        enumerate(mask, seed, NativeAngleSchedule.initialScan())
+        enumerate(mask, seed, NativeAngleSchedule.initialScan().asIterable())
 
     /** Trace candidates in the recovered local window; this does not score/select them. */
     fun enumerateLocalRefinement(
@@ -73,7 +73,7 @@ class AngleCandidateEnumerator(
         seed: FloatPoint,
         bestAngleDegrees: Float
     ): Sequence<AngleRayCandidate> =
-        enumerate(mask, seed, NativeAngleSchedule.localRefinement(bestAngleDegrees))
+        enumerate(mask, seed, NativeAngleSchedule.localRefinement(bestAngleDegrees).asIterable())
 }
 
 /**
@@ -88,4 +88,3 @@ data class NativeAngleProfileDecision(
     val accepted: Boolean,
     val nativeMeasurement: Float? = null
 )
-
