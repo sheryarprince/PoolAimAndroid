@@ -64,7 +64,7 @@ class PoolScreenDetector(private val sampleStep: Int = 2) {
         val queue = IntArray(w * h)
         val result = ArrayList<DetectedBall>()
         val minDiameter = table.width * 0.018f / sampleStep
-        val maxDiameter = table.width * 0.052f / sampleStep
+        val maxDiameter = table.width * 0.070f / sampleStep
         for (y in top + 2 until bottom - 1) for (x in left + 2 until right - 1) {
             val start = y * w + x
             if (seen[start] || green[start]) continue
