@@ -77,6 +77,8 @@ object NativeMaskCategory {
  * not assign RGB/BGR semantics and does not initialize unmatched output bytes.
  */
 object NativeMaskGenerator {
+    private const val CATEGORY8_COMPONENT1_UPPER_EXCLUSIVE = 190
+
     fun apply(
         classifierCategory: Int,
         first: PackedTripletImage,
@@ -130,12 +132,16 @@ object NativeMaskGenerator {
         c0: Int, c1: Int, c2: Int, d0: Int, d2: Int,
         x: Int, y: Int, output: MutableMaskPlane, t: NativeMaskThresholds
     ) {
-        if (basePredicate(c0, c1, c2, t)) output.write(x, y, 0xff)
-        // Native SUB followed by unsigned B.HI yields 101 <= c1 < 190.
-        if (c0 < 7 && c1 in 101 until 190 &&
+        val category8Upper = minOf(t.component1UpperExclusive, CATEGORY8_COMPONENT1_UPPER_EXCLUSIVE)
+        if (abs(c0 - t.center) > t.tolerance &&
+            c1 < category8Upper &&
+            c2 > t.component2LowerExclusive && c2 < t.component2UpperExclusive
+        ) output.write(x, y, 0xff)
+
+        // Native unsigned range is 101 <= c1 < 190 for this branch.
+        if (c0 < 7 && c1 in 101 until category8Upper &&
             c2 > t.component2LowerExclusive && c2 < t.component2UpperExclusive
         ) output.write(x, y, 0xff)
         if (d0 > 128 && abs(d0 - d2) < 5) output.write(x, y, 0xff)
     }
 }
-
