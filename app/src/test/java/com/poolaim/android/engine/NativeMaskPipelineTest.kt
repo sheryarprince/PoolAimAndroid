@@ -22,7 +22,7 @@ class NativeMaskPipelineTest {
                 NativePreparedMaskInput(
                     category = 1,
                     primaryTriplets = PackedTripletImage(
-                        byteArrayOf(0, 10, 200),
+                        byteArrayOf(0, 10, 200.toByte()),
                         width = 1,
                         height = 1,
                         rowStrideBytes = 3
@@ -52,7 +52,7 @@ class NativeMaskPipelineTest {
                 NativePreparedMaskInput(
                     category = 1,
                     primaryTriplets = PackedTripletImage(
-                        byteArrayOf(0, 10, 200, 0, 10, 200),
+                        byteArrayOf(0, 10, 200.toByte(), 0, 10, 200.toByte()),
                         width = 2,
                         height = 1,
                         rowStrideBytes = 6
@@ -74,7 +74,7 @@ class NativeMaskPipelineTest {
                 NativePreparedMaskInput(
                     category = NativeMaskCategory.PROFILE_8,
                     primaryTriplets = PackedTripletImage(
-                        byteArrayOf(0, 10, 200),
+                        byteArrayOf(0, 10, 200.toByte()),
                         width = 1,
                         height = 1,
                         rowStrideBytes = 3
