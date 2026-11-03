@@ -86,7 +86,7 @@ class PoolScreenDetectorTest {
     }
 
 
-    @Test fun detectsOnlyVisibleWhiteInGameAimGuide() {
+    @Test fun detectsWhiteGameGuideWithoutCueBallDetection() {
         val width = 500
         val height = 400
         val bytes = ByteArray(width * height * 4)
@@ -96,26 +96,22 @@ class PoolScreenDetectorTest {
             bytes[i + 2] = b.toByte(); bytes[i + 3] = 255.toByte()
         }
         for (y in 20 until 380) for (x in 20 until 480) put(x, y, 86, 86, 86)
-        for (y in 190..210) for (x in 240..260) {
-            val dx = x - 250; val dy = y - 200
-            if (dx * dx + dy * dy <= 100) put(x, y, 246, 243, 234)
-        }
-        // Thin, neutral-white in-game guide, not a cue shaft.
+        // A white guide line in the game frame. No cue-ball disc is supplied.
         for (y in 199..201) for (x in 262 until 410) put(x, y, 245, 245, 245)
 
         val frame = CapturedRgbaFrame.fromPlaneBytes(bytes, width, height, width * 4, 4)
         val guides = GameAimGuideDetector().detect(
-            frame,
-            com.poolaim.android.engine.FloatPoint(250f, 200f),
-            10f,
-            TableBounds(20f, 20f, 480f, 380f)
+            frame, TableBounds(20f, 20f, 480f, 380f)
         )
-        assertTrue("Expected white game guide to be detected", guides.isNotEmpty())
-        assertTrue("Guide should point predominantly right", guides.first().x > 0.90f)
-        assertTrue("Guide should be approximately horizontal", kotlin.math.abs(guides.first().y) < 0.25f)
+        assertTrue("Expected white game guide without cue-ball classification", guides.isNotEmpty())
+        val line = guides.first()
+        assertTrue("Guide should be predominantly horizontal",
+            kotlin.math.abs(line.end.y - line.start.y) < 5f)
+        assertTrue("Guide should span the visible white stroke",
+            kotlin.math.abs(line.end.x - line.start.x) > 100f)
     }
 
-    @Test fun doesNotCreateAimGuideWhenGameGuideIsAbsent() {
+    @Test fun ignoresWhiteCueBallWhenNoGuideStrokeExists() {
         val width = 500
         val height = 400
         val bytes = ByteArray(width * height * 4)
@@ -131,12 +127,9 @@ class PoolScreenDetectorTest {
         }
         val frame = CapturedRgbaFrame.fromPlaneBytes(bytes, width, height, width * 4, 4)
         val guides = GameAimGuideDetector().detect(
-            frame,
-            com.poolaim.android.engine.FloatPoint(250f, 200f),
-            10f,
-            TableBounds(20f, 20f, 480f, 380f)
+            frame, TableBounds(20f, 20f, 480f, 380f)
         )
-        assertTrue("No guide should be drawn when the game guide is absent", guides.isEmpty())
+        assertTrue("A white ball alone must not trigger an extended guide", guides.isEmpty())
     }
 
     @Test fun rejectsNonPoolScreen() {
