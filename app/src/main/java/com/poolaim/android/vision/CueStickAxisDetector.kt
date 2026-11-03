@@ -16,7 +16,7 @@ import kotlin.math.sin
  * its sign is irrelevant because both table-boundary intersections are used.
  */
 class CueStickAxisDetector(
-    private val angleSteps: Int = 180
+    private val angleSteps: Int = 360
 ) {
     init { require(angleSteps >= 90) }
 
@@ -38,7 +38,7 @@ class CueStickAxisDetector(
         var bestScore = 0f
         var best = FloatPoint(0f, 0f)
         for (i in 0 until angleSteps) {
-            val angle = PI * i / angleSteps
+            val angle = 2.0 * PI * i / angleSteps
             val ux = cos(angle).toFloat()
             val uy = sin(angle).toFloat()
             val px = -uy
