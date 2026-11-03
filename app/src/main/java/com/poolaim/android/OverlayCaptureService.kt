@@ -209,7 +209,7 @@ class OverlayCaptureService : Service() {
         if (panel != null) return
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(12), dp(10), dp(12), dp(10))
+            setPadding(dp(4), dp(4), dp(4), dp(4))
             background = GradientDrawable().apply {
                 setColor(Color.WHITE)
                 cornerRadius = dp(12).toFloat()
@@ -228,14 +228,17 @@ class OverlayCaptureService : Service() {
                 setTextColor(Color.rgb(20, 80, 100))
                 setTypeface(typeface, 1)
             },
-            LinearLayout.LayoutParams(0, dp(42), 1f)
+            LinearLayout.LayoutParams(0, dp(40), 1f)
         )
         val minimizeButton = Button(this).apply {
             text = "AIM"
             textSize = 11f
             minWidth = 0
             minimumWidth = 0
-            setPadding(dp(4), 0, dp(4), 0)
+            minHeight = 0
+            minimumHeight = 0
+            setPadding(dp(3), 0, dp(3), 0)
+            layoutParams = LinearLayout.LayoutParams(dp(48), dp(40))
         }
         header.addView(minimizeButton)
         root.addView(header)
@@ -331,13 +334,17 @@ class OverlayCaptureService : Service() {
 
     private fun refreshStatus() {
         val scene = processedScene
-        val tableStatus = if (scene?.scene?.table != null) "found" else "not found"
-        val ballCount = scene?.scene?.balls?.size ?: 0
         val guides = scene?.gameAimGuides?.size ?: 0
-        val text = "Captured frames: $capturedFrameCount" +
-            "\nProcessed frames: $processedFrameCount · errors: $captureErrorCount" +
-            "\nAim guides detected: $guides" +
-            "\n" + (scene?.diagnostic ?: "Waiting for game aiming guide.")
+        val cueVisible = scene?.scene?.balls?.any { it.ballId == BallIdentity.CUE } == true
+        val message = when {
+            guides > 0 -> "Game aiming guide detected · extending to cushion"
+            cueVisible -> "Cue ball visible · waiting for white game guide"
+            else -> "Waiting for an in-game cue ball and white aiming guide"
+        }
+        val text = "Pool Aim · guide extension" +
+            "\nCaptured: $capturedFrameCount · processed: $processedFrameCount" +
+            "\nCapture errors: $captureErrorCount" +
+            "\n$message"
         statusText?.post { statusText?.text = text }
         statusBadge?.post { statusBadge?.invalidate() }
     }
