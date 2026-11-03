@@ -15,9 +15,9 @@ data class AngleRayCandidate(
 /**
  * Enumerates only the confirmed geometric candidates from 0x10d848.
  *
- * Exact angle intervals/branch schedule and profile scoring remain outside
- * this class. Pass the angle sequence transcribed from the native CFG; no
- * default 0.5/0.1-degree schedule is fabricated here.
+ * Exact angle intervals are supplied by NativeAngleSchedule for the initial
+ * and local scans. This class only enumerates lateral origins and ray-length
+ * candidates; it does not implement the unresolved native profile scoring.
  */
 class AngleCandidateEnumerator(
     private val raySampler: DirectionalRaySampler = DirectionalRaySampler(),
@@ -62,6 +62,18 @@ class AngleCandidateEnumerator(
             }
         }
     }
+
+    /** Trace geometric candidates from the recovered first-pass angle schedule. */
+    fun enumerateInitialScan(mask: BinaryMaskView, seed: FloatPoint): Sequence<AngleRayCandidate> =
+        enumerate(mask, seed, NativeAngleSchedule.initialScan())
+
+    /** Trace candidates in the recovered local window; this does not score/select them. */
+    fun enumerateLocalRefinement(
+        mask: BinaryMaskView,
+        seed: FloatPoint,
+        bestAngleDegrees: Float
+    ): Sequence<AngleRayCandidate> =
+        enumerate(mask, seed, NativeAngleSchedule.localRefinement(bestAngleDegrees))
 }
 
 /**
@@ -76,3 +88,4 @@ data class NativeAngleProfileDecision(
     val accepted: Boolean,
     val nativeMeasurement: Float? = null
 )
+
