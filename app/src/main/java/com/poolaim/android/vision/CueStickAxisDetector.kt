@@ -28,7 +28,7 @@ class CueStickAxisDetector(
     ): FloatPoint? {
         if (ballRadius <= 2f) return null
         val maxLength = minOf(table.width, table.height) * 0.72f
-        val start = ballRadius * 1.65f
+        val start = ballRadius * 1.35f
         val step = max(2f, ballRadius * 0.30f)
         val end = minOf(maxLength, ballRadius * 34f)
         if (end <= start + step * 8f) return null
@@ -54,7 +54,7 @@ class CueStickAxisDetector(
 
                 val center = frame.pixelAt(x.toInt(), y.toInt())
                 val sideA = frame.pixelAt(
-                    (x + px * ballRadius * 0.36f).toInt(),
+                    (x + px * ballRadius * 0.65f).toInt(),
                     (y + py * ballRadius * 0.36f).toInt()
                 )
                 val sideB = frame.pixelAt(
