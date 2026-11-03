@@ -361,22 +361,30 @@ class OverlayCaptureService : Service() {
                     table.right - inset, table.bottom - inset
                 )
 
-                // Live cue-stick extensions are independent of shot solving.
-                // Draw them as soon as table + cue + shaft axis are detected.
+                // Extend only white aiming guides actually rendered by the game.
+                // No cue-stick shaft detection or table-felt colour heuristics.
                 val detectedCue = current.scene.balls.firstOrNull { it.ballId == BallIdentity.CUE }
-                val liveAxis = current.cueStickAxis
-                if (detectedCue != null && liveAxis != null) {
-                    val liveCenter = detectedCue.center
-                    val ends = lineToTableBounds(liveCenter, liveAxis, bounds)
-                    if (ends != null) {
+                if (detectedCue != null && current.gameAimGuides.isNotEmpty()) {
+                    val center = detectedCue.center
+                    current.gameAimGuides.forEach { direction ->
+                        val start = FloatPoint(
+                            center.x + direction.x * detectedCue.radius * 0.92f,
+                            center.y + direction.y * detectedCue.radius * 0.92f
+                        )
+                        val edge = rayToTableEdge(
+                            start,
+                            FloatPoint(start.x + direction.x, start.y + direction.y),
+                            bounds
+                        )
                         paint.style = Paint.Style.STROKE
                         paint.strokeWidth = dp(2).toFloat()
                         paint.color = Color.GREEN
-                        paint.pathEffect = DashPathEffect(floatArrayOf(dp(8).toFloat(), dp(5).toFloat()), 0f)
-                        canvas.drawLine(ends.first.x, ends.first.y, liveCenter.x, liveCenter.y, paint)
-                        canvas.drawLine(liveCenter.x, liveCenter.y, ends.second.x, ends.second.y, paint)
-                        paint.pathEffect = null
+                        paint.pathEffect = DashPathEffect(
+                            floatArrayOf(dp(8).toFloat(), dp(5).toFloat()), 0f
+                        )
+                        canvas.drawLine(start.x, start.y, edge.x, edge.y, paint)
                     }
+                    paint.pathEffect = null
                 }
 
                 val solution = current.solutions.firstOrNull()
