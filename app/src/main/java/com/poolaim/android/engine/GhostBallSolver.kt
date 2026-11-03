@@ -24,7 +24,9 @@ data class ShotSolution(
     val aimAngleDegrees: Float,
     val score: Float,
     val cuePathClear: Boolean,
-    val objectPathClear: Boolean
+    val objectPathClear: Boolean,
+    /** Exact first cushion-contact point for a one-cushion object-ball route. */
+    val bankPoint: FloatPoint? = null
 )
 
 data class CollisionValidation(
@@ -224,7 +226,8 @@ class GhostBallSolver {
                 ).toFloat(),
                 score = score,
                 cuePathClear = true,
-                objectPathClear = true
+                objectPathClear = true,
+                bankPoint = if (route.type == ShotType.ONE_CUSHION) route.objectPath.firstOrNull()?.second else null
             )
         )
     }
