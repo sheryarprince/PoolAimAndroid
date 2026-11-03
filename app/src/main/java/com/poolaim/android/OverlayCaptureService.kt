@@ -209,7 +209,7 @@ class OverlayCaptureService : Service() {
         }
         body.addView(
             TextView(this).apply {
-                text = "Capture and confirmed mechanics scaffold"
+                text = "Live screen detection + experimental ghost-ball solver"
                 textSize = 14f
                 setTextColor(Color.rgb(0, 125, 145))
                 setTypeface(typeface, 1)
@@ -225,7 +225,7 @@ class OverlayCaptureService : Service() {
         body.addView(statusText)
         body.addView(
             TextView(this).apply {
-                text = "Aim lines are intentionally disabled. Binary-mask generation and native profile scoring are not yet recovered; no guessed pocket, bank-shot, or collision geometry is drawn."
+                text = "Experimental lines use detected white-ball candidates and a 2:1 table calibration. Verify every result manually; ball classification, perspective correction, obstruction checks and full collision simulation are still incomplete."
                 textSize = 12f
                 setTextColor(Color.DKGRAY)
                 setPadding(0, dp(4), 0, dp(8))
@@ -338,7 +338,7 @@ class OverlayCaptureService : Service() {
             paint.color = Color.WHITE
             paint.textSize = dp(12).toFloat()
             canvas.drawText(
-                "POOL AIM · CAPTURE ONLY · " + frameCount,
+                "POOL AIM · DETECTING · " + frameCount,
                 left + dp(10),
                 top + dp(22),
                 paint
@@ -361,7 +361,7 @@ class OverlayCaptureService : Service() {
         if (Build.VERSION.SDK_INT >= 26) {
             Notification.Builder(this, CHANNEL_ID)
                 .setContentTitle("Pool Aim REA Port")
-                .setContentText("Raw screen capture is active; estimated aim lines are disabled")
+                .setContentText("Screen capture and experimental table detection are active")
                 .setSmallIcon(android.R.drawable.ic_menu_view)
                 .build()
         } else {
