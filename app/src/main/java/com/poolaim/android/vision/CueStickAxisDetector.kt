@@ -27,7 +27,9 @@ class CueStickAxisDetector(
         table: TableBounds
     ): FloatPoint? {
         if (ballRadius <= 2f) return null
-        val maxLength = minOf(table.width, table.height) * 0.72f
+        // The cue shaft commonly extends behind the cue ball beyond the cushion,
+        // so inspect the captured screen area, not only the felt rectangle.
+        val maxLength = minOf(frame.width.toFloat(), frame.height.toFloat()) * 0.72f
         val start = ballRadius * 1.35f
         val step = max(2f, ballRadius * 0.30f)
         val end = minOf(maxLength, ballRadius * 34f)
@@ -49,8 +51,8 @@ class CueStickAxisDetector(
             while (d <= end) {
                 val x = cueCenter.x + ux * d
                 val y = cueCenter.y + uy * d
-                if (x < table.left + 1f || x > table.right - 1f ||
-                    y < table.top + 1f || y > table.bottom - 1f) break
+                if (x < 1f || x > frame.width - 2f ||
+                    y < 1f || y > frame.height - 2f) break
 
                 val center = frame.pixelAt(x.toInt(), y.toInt())
                 val sideA = frame.pixelAt(
