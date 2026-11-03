@@ -339,10 +339,7 @@ class OverlayCaptureService : Service() {
             "\nAim guides detected: $guides" +
             "\n" + (scene?.diagnostic ?: "Waiting for game aiming guide.")
         statusText?.post { statusText?.text = text }
-        statusBadge?.post {
-            statusBadge?.frameCount = capturedFrameCount
-            statusBadge?.invalidate()
-        }
+        statusBadge?.post { statusBadge?.invalidate() }
     }
 
     private inner class StatusBadgeView : View(this@OverlayCaptureService) {
