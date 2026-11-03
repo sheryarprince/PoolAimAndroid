@@ -8,6 +8,7 @@ import android.content.Intent
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.DashPathEffect
 import android.graphics.PixelFormat
 import android.graphics.RectF
 import android.hardware.display.DisplayManager
@@ -30,11 +31,14 @@ import android.graphics.drawable.GradientDrawable
 import com.poolaim.android.capture.CapturedRgbaFrame
 import com.poolaim.android.capture.LatestFrameMailbox
 import com.poolaim.android.engine.CalibratedTableTransform
+import com.poolaim.android.engine.FloatPoint
 import com.poolaim.android.vision.BallIdentity
 import com.poolaim.android.vision.BallKind
 import com.poolaim.android.vision.PoolAimProcessor
 import com.poolaim.android.vision.ProcessedPoolFrame
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.math.abs
+import kotlin.math.min
 
 class OverlayCaptureService : Service() {
     companion object {
@@ -245,7 +249,7 @@ class OverlayCaptureService : Service() {
         }
         body.addView(statusText)
         body.addView(TextView(this).apply {
-            text = "Shot lines are shown only when the cue path and object-ball path pass geometric obstruction checks. Cushion, friction, spin and power physics are not yet fully simulated."
+            text = "Extended cue guide reaches the cushion; object-ball routes show direct or one-cushion bank paths. Geometry only—spin, friction and power are not simulated."
             textSize = 11f
             setTextColor(Color.DKGRAY)
             setPadding(0, dp(4), 0, dp(8))
@@ -349,14 +353,31 @@ class OverlayCaptureService : Service() {
                     val ghost = transform.toScreen(solution.ghost)
                     val target = transform.toScreen(solution.objectTarget)
                     val pocket = transform.toScreen(solution.pocket)
+                    val inset = maxOf(dp(2).toFloat(),
+                        current.scene.balls.filter { it.ballId != null }.map { it.radius }.average().toFloat())
+                    val bounds = RectF(table.left + inset, table.top + inset, table.right - inset, table.bottom - inset)
+                    // Extend cue-ball aiming direction through the ghost point to the first cushion.
+                    val railEnd = rayToTableEdge(cue, ghost, bounds)
                     paint.style = Paint.Style.STROKE
                     paint.strokeWidth = dp(2).toFloat()
                     paint.color = Color.GREEN
-                    canvas.drawLine(cue.x, cue.y, ghost.x, ghost.y, paint)
+                    paint.pathEffect = DashPathEffect(floatArrayOf(dp(8).toFloat(), dp(5).toFloat()), 0f)
+                    canvas.drawLine(cue.x, cue.y, railEnd.x, railEnd.y, paint)
+                    paint.pathEffect = null
                     paint.color = Color.YELLOW
                     canvas.drawLine(ghost.x, ghost.y, target.x, target.y, paint)
-                    paint.color = Color.CYAN
-                    canvas.drawLine(target.x, target.y, pocket.x, pocket.y, paint)
+                    if (solution.bankPoint != null) {
+                        val bank = transform.toScreen(solution.bankPoint)
+                        paint.color = Color.MAGENTA
+                        canvas.drawLine(target.x, target.y, bank.x, bank.y, paint)
+                        canvas.drawLine(bank.x, bank.y, pocket.x, pocket.y, paint)
+                        paint.style = Paint.Style.FILL
+                        paint.color = Color.WHITE
+                        canvas.drawCircle(bank.x, bank.y, dp(4).toFloat(), paint)
+                    } else {
+                        paint.color = Color.CYAN
+                        canvas.drawLine(target.x, target.y, pocket.x, pocket.y, paint)
+                    }
                     paint.style = Paint.Style.FILL
                     paint.color = Color.GREEN
                     canvas.drawCircle(ghost.x, ghost.y, dp(4).toFloat(), paint)
@@ -375,6 +396,20 @@ class OverlayCaptureService : Service() {
             paint.color = Color.WHITE
             paint.textSize = dp(12).toFloat()
             canvas.drawText("POOL AIM · IDS · $frameCount", left + dp(10), top + dp(22), paint)
+        }
+
+        /** Intersects a forward ray with the first inset table/cushion edge. */
+        private fun rayToTableEdge(origin: FloatPoint, through: FloatPoint, r: RectF): FloatPoint {
+            val dx = through.x - origin.x
+            val dy = through.y - origin.y
+            if (abs(dx) + abs(dy) < 0.001f) return through
+            var t = Float.POSITIVE_INFINITY
+            if (dx > 0f) t = min(t, (r.right - origin.x) / dx)
+            if (dx < 0f) t = min(t, (r.left - origin.x) / dx)
+            if (dy > 0f) t = min(t, (r.bottom - origin.y) / dy)
+            if (dy < 0f) t = min(t, (r.top - origin.y) / dy)
+            if (!t.isFinite() || t < 0f) return through
+            return FloatPoint(origin.x + dx * t, origin.y + dy * t)
         }
 
         private fun ballColor(id: Int?): Int = when (BallIdentity.baseColorId(id ?: -1)) {
