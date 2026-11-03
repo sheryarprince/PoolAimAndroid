@@ -222,14 +222,14 @@ class OverlayCaptureService : Service() {
         }
         header.addView(
             TextView(this).apply {
-                text = "POOL AIM · BALL IDS 0–15"
-                textSize = 15f
+                text = "POOL AIM"
+                textSize = 14f
                 setTextColor(Color.rgb(20, 80, 100))
                 setTypeface(typeface, 1)
             },
             LinearLayout.LayoutParams(0, dp(42), 1f)
         )
-        val minimizeButton = Button(this).apply { text = "MINIMIZE" }
+        val minimizeButton = Button(this).apply { text = "DETAILS" }
         header.addView(minimizeButton)
         root.addView(header)
 
@@ -259,11 +259,8 @@ class OverlayCaptureService : Service() {
             setOnClickListener { stopSelf() }
         })
         root.addView(body)
-        minimizeButton.setOnClickListener {
-            val visible = body.visibility == View.VISIBLE
-            body.visibility = if (visible) View.GONE else View.VISIBLE
-            minimizeButton.text = if (visible) "SHOW DETAILS" else "MINIMIZE"
-        }
+        // Start collapsed so the overlay does not hide the table or cue stick.
+        body.visibility = View.GONE
 
         val type = if (Build.VERSION.SDK_INT >= 26) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -272,13 +269,22 @@ class OverlayCaptureService : Service() {
             WindowManager.LayoutParams.TYPE_PHONE
         }
         val params = WindowManager.LayoutParams(
-            dp(330), WindowManager.LayoutParams.WRAP_CONTENT, type,
+            dp(190), WindowManager.LayoutParams.WRAP_CONTENT, type,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
         )
         params.gravity = Gravity.TOP or Gravity.END
         params.x = dp(10)
-        params.y = dp(90)
+        params.y = dp(12)
+        minimizeButton.setOnClickListener {
+            val expand = body.visibility != View.VISIBLE
+            body.visibility = if (expand) View.VISIBLE else View.GONE
+            minimizeButton.text = if (expand) "MINIMIZE" else "DETAILS"
+            (header.getChildAt(0) as? TextView)?.text =
+                if (expand) "POOL AIM · BALL IDS 0–15" else "POOL AIM"
+            params.width = dp(if (expand) 330 else 190)
+            windowManager.updateViewLayout(root, params)
+        }
         windowManager.addView(root, params)
         panel = root
     }
