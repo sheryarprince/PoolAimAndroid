@@ -401,18 +401,6 @@ class OverlayCaptureService : Service() {
         }
     }
 
-    private fun ballColor(id: Int?): Int = when (BallIdentity.baseColorId(id ?: -1)) {
-            1 -> Color.rgb(242, 193, 46)
-            2 -> Color.rgb(29, 79, 192)
-            3 -> Color.rgb(210, 56, 42)
-            4 -> Color.rgb(90, 42, 136)
-            5 -> Color.rgb(239, 122, 26)
-            6 -> Color.rgb(23, 137, 75)
-            7 -> Color.rgb(123, 30, 36)
-            else -> Color.YELLOW
-        }
-    }
-
     private fun makeNotificationChannel() {
         if (Build.VERSION.SDK_INT >= 26) {
             val channel = NotificationChannel(
