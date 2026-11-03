@@ -26,7 +26,7 @@ class PoolAimProcessor(
 
         // Guide detection is independent of ball classification. The game's
         // white guide is detected directly from its visible line pixels.
-        val guides = gameAimGuideDetector.detect(frame, table, excludedAreas)
+        val guides = gameAimGuideDetector.detect(frame, table, excludedAreas, scene.balls)
         val solutions = solver.solve(scene)
         val diagnostic = when {
             guides.isNotEmpty() ->
