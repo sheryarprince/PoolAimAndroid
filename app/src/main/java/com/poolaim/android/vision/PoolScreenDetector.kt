@@ -9,7 +9,7 @@ data class TableBounds(val left: Float, val top: Float, val right: Float, val bo
     val width get() = right - left
     val height get() = bottom - top
 }
-data class DetectedBall(val center: FloatPoint, val radius: Float, val confidence: Float)
+data class DetectedBall(val center: FloatPoint, val radius: Float, val confidence: Float, val isCueCandidate: Boolean = false)
 data class PoolScene(
     val table: TableBounds?, val balls: List<DetectedBall>, val confidence: Float,
     val frameWidth: Int, val frameHeight: Int, val diagnostic: String
@@ -101,9 +101,16 @@ class PoolScreenDetector(private val sampleStep: Int = 2) {
             val circularity = (min(cw, ch).toFloat() / max(cw, ch)).coerceIn(0f, 1f)
             val sizeScore = (1f - kotlin.math.abs(diameter - (minDiameter + maxDiameter) / 2f) /
                 ((maxDiameter - minDiameter) / 2f)).coerceIn(0f, 1f)
-            result.add(DetectedBall(FloatPoint((sumX.toFloat() / n + 0.5f) * sampleStep,
-                (sumY.toFloat() / n + 0.5f) * sampleStep),
-                diameter * sampleStep * 0.5f, (0.55f * circularity + 0.45f * sizeScore).coerceIn(0f, 1f)))
+            val centerX = ((sumX.toFloat() / n + 0.5f) * sampleStep).toInt().coerceIn(0, frame.width - 1)
+            val centerY = ((sumY.toFloat() / n + 0.5f) * sampleStep).toInt().coerceIn(0, frame.height - 1)
+            val centerPixel = frame.pixelAt(centerX, centerY)
+            val whiteCue = centerPixel != null && centerPixel.red > 190 &&
+                centerPixel.green > 190 && centerPixel.blue > 175 &&
+                kotlin.math.abs(centerPixel.red - centerPixel.green) < 55 &&
+                kotlin.math.abs(centerPixel.green - centerPixel.blue) < 65
+            result.add(DetectedBall(FloatPoint(centerX.toFloat(), centerY.toFloat()),
+                diameter * sampleStep * 0.5f,
+                (0.55f * circularity + 0.45f * sizeScore).coerceIn(0f, 1f), whiteCue))
         }
         return result.sortedByDescending { it.confidence }.take(16)
     }
