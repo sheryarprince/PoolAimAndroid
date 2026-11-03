@@ -35,6 +35,7 @@ import com.poolaim.android.engine.CalibratedTableTransform
 import com.poolaim.android.engine.FloatPoint
 import com.poolaim.android.vision.PoolAimProcessor
 import com.poolaim.android.vision.ProcessedPoolFrame
+import com.poolaim.android.vision.TableBounds
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.abs
 import kotlin.math.min
@@ -62,6 +63,7 @@ class OverlayCaptureService : Service() {
     private val aimProcessor = PoolAimProcessor()
     private val processingScheduled = AtomicBoolean(false)
     @Volatile private var processedScene: ProcessedPoolFrame? = null
+    @Volatile private var panelExclusion: TableBounds? = null
     private var capturedFrameCount = 0L
     private var processedFrameCount = 0L
     private var captureErrorCount = 0L
@@ -158,11 +160,12 @@ class OverlayCaptureService : Service() {
             processingScheduled.set(false)
             return
         }
+        val excluded = panelExclusion?.let { listOf(it) } ?: emptyList()
         handler.post {
             try {
                 val frame = latestFrames.take()
                 if (frame != null) {
-                    processedScene = aimProcessor.process(frame)
+                    processedScene = aimProcessor.process(frame, excluded)
                     processedFrameCount++
                     statusBadge?.post {
                         statusBadge?.scene = processedScene
@@ -324,6 +327,17 @@ class OverlayCaptureService : Service() {
             params.height = WindowManager.LayoutParams.WRAP_CONTENT
             windowManager.updateViewLayout(root, params)
         }
+        root.addOnLayoutChangeListener { view, _, _, _, _, _, _, _, _ ->
+            val location = IntArray(2)
+            view.getLocationOnScreen(location)
+            val margin = dp(8).toFloat()
+            panelExclusion = TableBounds(
+                location[0] - margin,
+                location[1] - margin,
+                location[0] + view.width + margin,
+                location[1] + view.height + margin
+            )
+        }
         windowManager.addView(root, params)
         panel = root
     }
@@ -434,6 +448,7 @@ class OverlayCaptureService : Service() {
         try { panel?.let { windowManager.removeView(it) } } catch (_: Exception) {}
         statusBadge = null
         panel = null
+        panelExclusion = null
         statusText = null
         virtualDisplay?.release()
         virtualDisplay = null
