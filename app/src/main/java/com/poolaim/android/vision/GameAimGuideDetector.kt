@@ -35,8 +35,8 @@ class GameAimGuideDetector {
         // First locate the small white circular aiming reticle. A ball's white
         // patch is filled, not a continuous annulus, so it cannot pass this test.
         var best: Reticle? = null
-        val radii = 10..22
-        val angularSamples = 36
+        val radii = listOf(13, 16, 19)
+        val angularSamples = 24
         var cy = top + 24
         while (cy < bottom - 24) {
             var cx = left + 24
@@ -62,13 +62,40 @@ class GameAimGuideDetector {
                         }
                     }
                 }
-                cx += 3
+                cx += 8
             }
-            cy += 3
+            cy += 8
         }
-        val reticle = best ?: return emptyList()
+        val coarse = best ?: return emptyList()
+        // Refine the centre locally so the ray origins do not drift with coarse sampling.
+        var reticle = coarse
+        for (ry in -8..8 step 2) for (rx in -8..8 step 2) {
+            val cx = coarse.center.x.toInt() + rx
+            val cy = coarse.center.y.toInt() + ry
+            if (cx !in left + 20 until right - 20 || cy !in top + 20 until bottom - 20 ||
+                excluded(cx, cy)) continue
+            for (radius in 12..21) {
+                var score = 0
+                for (i in 0 until 32) {
+                    val a = 2.0 * PI * i / 32
+                    var hit = false
+                    for (dr in -1..1) {
+                        val x = cx + ((radius + dr) * cos(a)).roundToInt()
+                        val y = cy + ((radius + dr) * sin(a)).roundToInt()
+                        if (!excluded(x, y) && isGuideWhite(frame.pixelAt(x, y))) {
+                            hit = true
+                            break
+                        }
+                    }
+                    if (hit) score++
+                }
+                if (score > reticle.score) {
+                    reticle = Reticle(FloatPoint(cx.toFloat(), cy.toFloat()), radius, score)
+                }
+            }
+        }
         // Require a near-complete ring; do not guess a centre from arbitrary lines.
-        if (reticle.score < 23) return emptyList()
+        if (reticle.score < 21) return emptyList()
 
         // Search radially outward from the reticle. This is deliberately local:
         // white balls, labels, table trim and unrelated UI cannot become guide axes.
@@ -127,7 +154,8 @@ class GameAimGuideDetector {
         for (ray in rays.sortedWith(compareByDescending<Ray> { it.length }.thenByDescending { it.hits })) {
             val duplicate = selected.any { existing ->
                 val raw = abs(existing.angle - ray.angle)
-                val difference = minOf(raw, abs(PI.toFloat() - raw))
+                val normalized = raw % PI.toFloat()
+                val difference = minOf(normalized, PI.toFloat() - normalized)
                 difference < 0.22f
             }
             if (!duplicate) selected.add(ray)
