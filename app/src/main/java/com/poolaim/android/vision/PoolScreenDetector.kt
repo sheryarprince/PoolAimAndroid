@@ -267,7 +267,18 @@ class PoolScreenDetector(
             g > r * 1.24f && b - r > 48
         val greenFelt = g > 48 && g > r * 1.12f &&
             g > b * 1.04f && g - r > 12
-        return blueFelt || greenFelt
+
+        // Some 8 Ball Pool tables use charcoal/grey cloth. These tables have
+        // very low chroma, unlike the dark blue game background and wood rails.
+        // Keep the luminance band narrow so black UI areas are not classified
+        // as felt; the connected-component and pool-table aspect checks below
+        // still reject isolated neutral regions.
+        val maximum = max(r, max(g, b))
+        val minimum = min(r, min(g, b))
+        val luminance = (r + g + b) / 3f
+        val neutralGreyFelt = maximum - minimum <= 22 &&
+            luminance in 38f..158f
+        return blueFelt || greenFelt || neutralGreyFelt
     }
 
     private fun distance(a: FloatPoint, b: FloatPoint): Float {
