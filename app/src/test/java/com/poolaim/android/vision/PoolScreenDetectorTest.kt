@@ -86,7 +86,7 @@ class PoolScreenDetectorTest {
     }
 
 
-    @Test fun detectsWhiteGameGuideWithoutCueBallDetection() {
+    @Test fun detectsOnlyTwoWhiteGuideRaysAttachedToReticle() {
         val width = 500
         val height = 400
         val bytes = ByteArray(width * height * 4)
@@ -96,19 +96,38 @@ class PoolScreenDetectorTest {
             bytes[i + 2] = b.toByte(); bytes[i + 3] = 255.toByte()
         }
         for (y in 20 until 380) for (x in 20 until 480) put(x, y, 86, 86, 86)
-        // A white guide line in the game frame. No cue-ball disc is supplied.
-        for (y in 199..201) for (x in 262 until 410) put(x, y, 245, 245, 245)
-
+        val cx = 250
+        val cy = 200
+        // Circular white aiming reticle.
+        for (degree in 0 until 360) {
+            val a = Math.toRadians(degree.toDouble())
+            for (dr in -1..1) {
+                val x = cx + ((16 + dr) * kotlin.math.cos(a)).toInt()
+                val y = cy + ((16 + dr) * kotlin.math.sin(a)).toInt()
+                put(x, y, 245, 245, 245)
+            }
+        }
+        // Exactly two game guide rays attached to the reticle.
+        for (distance in 19..115) {
+            for (offset in -1..1) {
+                put(cx + distance, cy + offset, 245, 245, 245)
+                val x = cx - (distance * 0.7071f).toInt() + offset
+                val y = cy + (distance * 0.7071f).toInt()
+                put(x, y, 245, 245, 245)
+            }
+        }
         val frame = CapturedRgbaFrame.fromPlaneBytes(bytes, width, height, width * 4, 4)
         val guides = GameAimGuideDetector().detect(
             frame, TableBounds(20f, 20f, 480f, 380f)
         )
-        assertTrue("Expected white game guide without cue-ball classification", guides.isNotEmpty())
-        val line = guides.first()
-        assertTrue("Guide should be predominantly horizontal",
-            kotlin.math.abs(line.end.y - line.start.y) < 5f)
-        assertTrue("Guide should span the visible white stroke",
-            kotlin.math.abs(line.end.x - line.start.x) > 100f)
+        assertEquals("Only the two reticle-connected guide rays should be returned", 2, guides.size)
+        assertTrue(guides.all { kotlin.math.abs(it.start.x - cx) < 4f &&
+            kotlin.math.abs(it.start.y - cy) < 4f })
+        val angles = guides.map {
+            kotlin.math.atan2(it.end.y - it.start.y, it.end.x - it.start.x)
+        }
+        assertTrue(angles.any { kotlin.math.abs(it) < 0.25f })
+        assertTrue(angles.any { it > 2.0f || it < -2.0f })
     }
 
     @Test fun ignoresWhiteCueBallWhenNoGuideStrokeExists() {
