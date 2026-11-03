@@ -23,15 +23,19 @@ data class RadialValidation(
  * The caller supplies the native 180-entry direction table. The exact native
  * initialization of those arrays has not yet been verified.
  */
+fun interface CandidatePointValidator {
+    fun validate(mask: BinaryMaskView, point: FloatPoint): RadialValidation
+}
+
 class RadialMaskValidator(
     private val directions: DirectionTable,
     private val outerThreshold: Float = 0.85f
-) {
+) : CandidatePointValidator {
     init {
         require(outerThreshold in 0f..1f)
     }
 
-    fun validate(mask: BinaryMaskView, point: FloatPoint): RadialValidation {
+    override fun validate(mask: BinaryMaskView, point: FloatPoint): RadialValidation {
         val empty = RadialValidation(false, RadialRejectReason.OUTSIDE_IMAGE, 0, 0, 0, 0)
         if (!point.x.isFinite() || !point.y.isFinite()) return empty
 
@@ -104,3 +108,4 @@ class RadialMaskValidator(
         return RadialValidation(true, null, outerHits, innerHits, hits9, hits16)
     }
 }
+
