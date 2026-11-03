@@ -16,14 +16,17 @@ class PoolAimProcessor(
     private val solver: GhostBallSolver = GhostBallSolver(),
     private val gameAimGuideDetector: GameAimGuideDetector = GameAimGuideDetector()
 ) {
-    fun process(frame: CapturedRgbaFrame): ProcessedPoolFrame {
+    fun process(
+        frame: CapturedRgbaFrame,
+        excludedAreas: List<TableBounds> = emptyList()
+    ): ProcessedPoolFrame {
         val scene = detector.detect(frame)
         val table = scene.table
             ?: return ProcessedPoolFrame(scene, emptyList(), scene.diagnostic)
 
         // Guide detection is independent of ball classification. The game's
         // white guide is detected directly from its visible line pixels.
-        val guides = gameAimGuideDetector.detect(frame, table)
+        val guides = gameAimGuideDetector.detect(frame, table, excludedAreas)
         val solutions = solver.solve(scene)
         val diagnostic = when {
             guides.isNotEmpty() ->
