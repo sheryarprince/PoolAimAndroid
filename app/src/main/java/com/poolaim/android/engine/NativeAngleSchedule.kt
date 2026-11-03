@@ -5,19 +5,31 @@ import kotlin.math.min
 /**
  * Angle schedules recovered from ARM64 raw-image RVA 0x10d848.
  *
- * The first pass uses 0.5 degree increments, with 0.1 degree increments in
- * narrow regions around 0, 90, 180, 270, and 360 degrees. The second pass
- * scans a 2 degree window around a stored best angle in 0.1 degree increments.
- * This object only reproduces angle enumeration. It does not select a best
- * angle or implement the opaque profile scoring in 0x10d19c/0x10d848.
+ * The sweep uses 0.5 degree increments, with 0.1 degree increments in narrow
+ * regions around 0, 90, 180, 270, and 360 degrees. The second pass scans a
+ * 2 degree window around the stored best angle in 0.1 degree steps. Integer
+ * tenths are used to avoid cumulative floating-point drift at branch limits.
+ * This object enumerates angles only; it does not select a best angle or
+ * implement the opaque profile scoring in 0x10d19c/0x10d848.
  */
 object NativeAngleSchedule {
-    /** Angles evaluated by the initial native sweep; 360 degrees is the stop bound. */
+    /** Angles evaluated by the initial sweep; 360 degrees is the exclusive bound. */
     fun initialScan(): Sequence<Float> = sequence {
-        var angle = 0f
-        while (angle < 360f) {
-            yield(angle)
-            angle = nextInitialAngle(angle)
+        var tenths = 0
+        while (tenths < 3600) {
+            yield(tenths / 10f)
+            val increment = when {
+                tenths < 10 -> 1
+                tenths <= 885 -> 5
+                tenths < 910 -> 1
+                tenths <= 1785 -> 5
+                tenths < 1815 -> 1
+                tenths <= 2685 -> 5
+                tenths < 2710 -> 1
+                tenths <= 3585 -> 5
+                else -> 1
+            }
+            tenths += increment
         }
     }
 
@@ -29,25 +41,14 @@ object NativeAngleSchedule {
         require(bestAngleDegrees.isFinite())
         if (bestAngleDegrees < 1f) return@sequence
 
-        var angle = bestAngleDegrees - 1f
+        val start = bestAngleDegrees - 1f
         val endExclusive = min(bestAngleDegrees + 1f, 360f)
-        while (angle < endExclusive) {
+        var stepIndex = 0
+        while (true) {
+            val angle = start + stepIndex * 0.1f
+            if (angle >= endExclusive) break
             yield(angle)
-            // The local pass adds the float32 0.1 constant, matching FADD S.
-            angle += 0.1f
+            stepIndex += 1
         }
     }
-
-    private fun nextInitialAngle(angle: Float): Float = when {
-        angle < 1f -> (angle.toDouble() + 0.1).toFloat()
-        angle <= 88.5f -> angle + 0.5f
-        angle < 91f -> (angle.toDouble() + 0.1).toFloat()
-        angle <= 178.5f -> angle + 0.5f
-        angle < 181.5f -> (angle.toDouble() + 0.1).toFloat()
-        angle <= 268.5f -> angle + 0.5f
-        angle < 271f -> (angle.toDouble() + 0.1).toFloat()
-        angle <= 358.5f -> angle + 0.5f
-        else -> (angle.toDouble() + 0.1).toFloat()
-    }
 }
-
