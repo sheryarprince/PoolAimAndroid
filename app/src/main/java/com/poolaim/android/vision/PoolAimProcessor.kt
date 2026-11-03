@@ -1,7 +1,6 @@
 package com.poolaim.android.vision
 
 import com.poolaim.android.capture.CapturedRgbaFrame
-import com.poolaim.android.engine.FloatPoint
 import com.poolaim.android.engine.GhostBallSolver
 import com.poolaim.android.engine.ShotSolution
 
@@ -9,7 +8,7 @@ data class ProcessedPoolFrame(
     val scene: PoolScene,
     val solutions: List<ShotSolution>,
     val diagnostic: String,
-    val gameAimGuides: List<FloatPoint> = emptyList()
+    val gameAimGuides: List<GameAimGuideSegment> = emptyList()
 )
 
 class PoolAimProcessor(
@@ -21,35 +20,17 @@ class PoolAimProcessor(
         val scene = detector.detect(frame)
         val table = scene.table
             ?: return ProcessedPoolFrame(scene, emptyList(), scene.diagnostic)
-        val cueCandidates = scene.balls.filter {
-            it.ballId == BallIdentity.CUE && it.classificationConfidence >= 0.65f
-        }
-        if (cueCandidates.isEmpty()) {
-            return ProcessedPoolFrame(
-                scene, emptyList(),
-                "${scene.diagnostic}; waiting for cue ball and in-game white aiming guides"
-            )
-        }
-        val selectedCue = cueCandidates.maxByOrNull { it.classificationConfidence }!!
-        val cleaned = if (cueCandidates.size > 1) {
-            scene.copy(balls = scene.balls.filter {
-                it.ballId != BallIdentity.CUE || it === selectedCue
-            })
-        } else scene
 
-        // The extension trigger is exclusively the game's own white guide line.
-        // No cue-stick appearance/colour or table-felt colour is used here.
-        val guides = gameAimGuideDetector.detect(
-            frame, selectedCue.center, selectedCue.radius, table
-        )
-        val solutions = solver.solve(cleaned)
+        // Guide detection is independent of ball classification. The game's
+        // white guide is detected directly from its visible line pixels.
+        val guides = gameAimGuideDetector.detect(frame, table)
+        val solutions = solver.solve(scene)
         val diagnostic = when {
-            guides.isNotEmpty() -> "${cleaned.diagnostic}; ${guides.size} in-game white aiming guide(s) detected"
-            solutions.isNotEmpty() -> "${cleaned.diagnostic}; no in-game white aiming guide visible"
-            cleaned.balls.none { it.ballId?.let { id -> id in 1..15 } == true } ->
-                "${cleaned.diagnostic}; no numbered object balls identified"
-            else -> "${cleaned.diagnostic}; no collision-clear shot found; waiting for white aiming guide"
+            guides.isNotEmpty() ->
+                "${scene.diagnostic}; ${guides.size} in-game white guide stroke(s) detected"
+            else ->
+                "${scene.diagnostic}; no long white in-game guide stroke detected"
         }
-        return ProcessedPoolFrame(cleaned, solutions, diagnostic, guides)
+        return ProcessedPoolFrame(scene, solutions, diagnostic, guides)
     }
 }
