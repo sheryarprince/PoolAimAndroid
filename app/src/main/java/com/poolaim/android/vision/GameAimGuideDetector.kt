@@ -58,7 +58,7 @@ class GameAimGuideDetector {
                 if (!excluded(x, y)) {
                     for (radius in radii) {
                         val score = ringScore(frame, x, y, radius, ::excluded)
-                        if (score >= 15) {
+                        if (score >= 22 && ringCoverage(frame, x, y, radius, ::excluded) >= 6) {
                             val candidate = Ring(FloatPoint(x.toFloat(), y.toFloat()), radius, score)
                             if (coarse.none { distance(it.center, candidate.center) < 18f }) {
                                 coarse.add(candidate)
@@ -95,11 +95,14 @@ class GameAimGuideDetector {
             val rays = findRays(frame, refined, left, top, right, bottom, maxRay, ::excluded)
             if (rays.size < 2) continue
             val strongest = rays.take(2)
+            var separation = abs(strongest[0].angle - strongest[1].angle)
+            if (separation > PI.toFloat()) separation = 2f * PI.toFloat() - separation
+            if (separation < 0.40f || separation > 2.75f) continue
             // Reward two long, well-supported rays; reject candidates that
             // merely sit near a single cue-stick edge or a ball highlight.
-            val quality = refined.score * 0.45f +
-                strongest.sumOf { it.length.toDouble() }.toFloat() * 0.65f +
-                strongest.sumOf { it.hits.toDouble() }.toFloat() * 0.25f
+            val quality = refined.score * 8f +
+                minOf(strongest[0].length, strongest[1].length) * 0.12f +
+                strongest.sumOf { it.hits.toDouble() }.toFloat() * 0.05f
             if (best == null || quality > best!!.quality) {
                 best = Candidate(refined, strongest, quality)
             }
@@ -169,7 +172,7 @@ class GameAimGuideDetector {
                     gap++
                     if (gap > 2) {
                         val length = lastHit - runStart + 1
-                        if (runStart <= ring.radius + 9 && length >= 22 && hits >= 17) {
+                        if (runStart <= ring.radius + 6 && length >= 32 && hits >= 25) {
                             val candidate = Ray(angle, runStart, lastHit, hits)
                             if (bestRay == null || candidate.length > bestRay!!.length) bestRay = candidate
                         }
@@ -203,6 +206,35 @@ class GameAimGuideDetector {
             if (selected.size == 2) break
         }
         return selected
+    }
+
+    /** Require a near-complete circular reticle, not scattered white pixels. */
+    private fun ringCoverage(
+        frame: CapturedRgbaFrame,
+        cx: Int,
+        cy: Int,
+        radius: Int,
+        excluded: (Int, Int) -> Boolean
+    ): Int {
+        var coveredSectors = 0
+        for (sector in 0 until 8) {
+            var hits = 0
+            for (sample in 0 until 4) {
+                val angle = 2.0 * PI * (sector * 4 + sample) / 32.0
+                var found = false
+                for (dr in -1..1) {
+                    val x = cx + ((radius + dr) * cos(angle)).roundToInt()
+                    val y = cy + ((radius + dr) * sin(angle)).roundToInt()
+                    if (!excluded(x, y) && isGuideWhite(frame.pixelAt(x, y))) {
+                        found = true
+                        break
+                    }
+                }
+                if (found) hits++
+            }
+            if (hits >= 2) coveredSectors++
+        }
+        return coveredSectors
     }
 
     private fun ringScore(
