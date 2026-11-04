@@ -57,7 +57,7 @@ class GameAimGuideDetector {
             while (x < right - 24) {
                 if (!excluded(x, y)) {
                     for (radius in radii) {
-                        val score = ringScore(frame, x, y, radius, excluded)
+                        val score = ringScore(frame, x, y, radius, ::excluded)
                         if (score >= 15) {
                             val candidate = Ring(FloatPoint(x.toFloat(), y.toFloat()), radius, score)
                             if (coarse.none { distance(it.center, candidate.center) < 18f }) {
@@ -85,14 +85,14 @@ class GameAimGuideDetector {
                 if (cx !in left + 22 until right - 22 || cy !in top + 22 until bottom - 22 ||
                     excluded(cx, cy)) continue
                 for (radius in 11..22) {
-                    val score = ringScore(frame, cx, cy, radius, excluded)
+                    val score = ringScore(frame, cx, cy, radius, ::excluded)
                     if (score > refined.score) {
                         refined = Ring(FloatPoint(cx.toFloat(), cy.toFloat()), radius, score)
                     }
                 }
             }
 
-            val rays = findRays(frame, refined, left, top, right, bottom, maxRay, excluded)
+            val rays = findRays(frame, refined, left, top, right, bottom, maxRay, ::excluded)
             if (rays.size < 2) continue
             val strongest = rays.take(2)
             // Reward two long, well-supported rays; reject candidates that
