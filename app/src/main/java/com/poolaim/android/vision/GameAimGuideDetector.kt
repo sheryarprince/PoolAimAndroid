@@ -112,7 +112,18 @@ class GameAimGuideDetector {
                 }
             }
 
-            val rays = findRays(frame, refined, left, top, right, bottom, maxRay, ::excluded)
+            // The cue ball can physically cover the first part of one guide
+            // stroke. Permit that one known occlusion, but only along the
+            // reticle-to-cue-ball distance; do not bridge arbitrary gaps.
+            val cueAnchor = cueBalls.minBy { distance(refined.center, it.center) }
+            val cueGapAllowance = (
+                distance(refined.center, cueAnchor.center) + cueAnchor.radius * 1.5f
+            ).toInt()
+            val maxStartDistance = refined.radius + 6 + cueGapAllowance
+            val rays = findRays(
+                frame, refined, left, top, right, bottom, maxRay,
+                maxStartDistance, ::excluded
+            )
             if (rays.size < 2) continue
             val strongest = rays.take(2)
             var separation = abs(strongest[0].angle - strongest[1].angle)
@@ -120,9 +131,15 @@ class GameAimGuideDetector {
             if (separation < 0.40f || separation > 2.75f) continue
             // Reward two long, well-supported rays; reject candidates that
             // merely sit near a single cue-stick edge or a ball highlight.
-            val quality = refined.score * 8f +
-                minOf(strongest[0].length, strongest[1].length) * 0.12f +
-                strongest.sumOf { it.hits.toDouble() }.toFloat() * 0.05f
+            val cueDistanceRadii = distance(refined.center, cueAnchor.center) /
+                cueAnchor.radius.coerceAtLeast(1f)
+            // Prefer the reticle physically attached to the cue ball and two
+            // long continuous guide strokes; raw ring whiteness alone must
+            // not select a decorative circle elsewhere on the table.
+            val quality = refined.score * 0.8f +
+                minOf(strongest[0].length, strongest[1].length) * 0.50f +
+                strongest.sumOf { it.hits.toDouble() }.toFloat() * 0.10f -
+                abs(cueDistanceRadii - 2.8f) * 25f
             if (best == null || quality > best!!.quality) {
                 best = Candidate(refined, strongest, quality)
             }
@@ -152,6 +169,7 @@ class GameAimGuideDetector {
         right: Int,
         bottom: Int,
         maxLength: Int,
+        maxStartDistance: Int,
         excluded: (Int, Int) -> Boolean
     ): List<Ray> {
         val rays = ArrayList<Ray>()
@@ -192,7 +210,7 @@ class GameAimGuideDetector {
                     gap++
                     if (gap > 2) {
                         val length = lastHit - runStart + 1
-                        if (runStart <= ring.radius + 6 && length >= 32 && hits >= 25) {
+                        if (runStart <= maxStartDistance && length >= 32 && hits >= 25) {
                             val candidate = Ray(angle, runStart, lastHit, hits)
                             if (bestRay == null || candidate.length > bestRay!!.length) bestRay = candidate
                         }
@@ -205,7 +223,7 @@ class GameAimGuideDetector {
             }
             if (runStart >= 0) {
                 val length = lastHit - runStart + 1
-                if (runStart <= ring.radius + 6 && length >= 32 && hits >= 25) {
+                if (runStart <= maxStartDistance && length >= 32 && hits >= 25) {
                     val candidate = Ray(angle, runStart, lastHit, hits)
                     if (bestRay == null || candidate.length > bestRay!!.length) bestRay = candidate
                 }
