@@ -75,9 +75,26 @@ class GameAimGuideDetector {
         }
         if (coarse.isEmpty()) return emptyList()
 
+        // The guide reticle belongs to the cue-ball aiming system. A ring-like
+        // highlight elsewhere on the felt must never win merely because it has
+        // more white pixels. Require a confidently detected cue ball and keep
+        // candidate reticles in the small, physically plausible zone around it.
+        val cueBalls = balls.filter {
+            it.ballId == BallIdentity.CUE && it.confidence >= 0.20f
+        }
+        if (cueBalls.size != 1) return emptyList()
+        val cue = cueBalls.single()
+        val minCueDistance = cue.radius * 1.65f
+        val maxCueDistance = cue.radius * 5.25f
+        val anchored = coarse.filter { candidate ->
+            val d = distance(candidate.center, cue.center)
+            d in minCueDistance..maxCueDistance
+        }
+        if (anchored.isEmpty()) return emptyList()
+
         val maxRay = (minOf(table.width, table.height) * 0.46f).toInt().coerceAtLeast(80)
         var best: Candidate? = null
-        for (coarseRing in coarse.sortedByDescending { it.score }.take(24)) {
+        for (coarseRing in anchored.sortedByDescending { it.score }.take(24)) {
             var refined = coarseRing
             for (oy in -6..6 step 2) for (ox in -6..6 step 2) {
                 val cx = coarseRing.center.x.toInt() + ox
@@ -185,7 +202,7 @@ class GameAimGuideDetector {
             }
             if (runStart >= 0) {
                 val length = lastHit - runStart + 1
-                if (runStart <= ring.radius + 9 && length >= 22 && hits >= 17) {
+                if (runStart <= ring.radius + 6 && length >= 32 && hits >= 25) {
                     val candidate = Ray(angle, runStart, lastHit, hits)
                     if (bestRay == null || candidate.length > bestRay!!.length) bestRay = candidate
                 }
