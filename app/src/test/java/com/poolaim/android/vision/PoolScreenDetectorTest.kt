@@ -117,8 +117,16 @@ class PoolScreenDetectorTest {
             }
         }
         val frame = CapturedRgbaFrame.fromPlaneBytes(bytes, width, height, width * 4, 4)
+        // Cue-ball evidence anchors the reticle; place the cue ball 30 px
+        // to the right of the guide ring, matching the detector's distance gate.
+        val cueBall = DetectedBall(
+            center = com.poolaim.android.engine.FloatPoint(280f, 200f),
+            radius = 10f,
+            confidence = 0.95f,
+            ballId = BallIdentity.CUE
+        )
         val guides = GameAimGuideDetector().detect(
-            frame, TableBounds(20f, 20f, 480f, 380f)
+            frame, TableBounds(20f, 20f, 480f, 380f), balls = listOf(cueBall)
         )
         assertEquals("Only the two reticle-connected guide rays should be returned", 2, guides.size)
         assertTrue(guides.all { kotlin.math.abs(it.start.x - cx) < 4f &&
