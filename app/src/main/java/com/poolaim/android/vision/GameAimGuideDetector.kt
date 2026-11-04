@@ -82,7 +82,7 @@ class GameAimGuideDetector {
                     if (score > refined.score) refined = Ring(FloatPoint(cx.toFloat(), cy.toFloat()), radius, score)
                 }
             }
-            val rays = findRays(frame, refined, left, top, right, bottom, maxRay, ::excluded)
+            val rays = findRays(frame, refined, left, top, right, bottom, maxRay, balls, ::excluded)
             if (rays.size < 2) continue
             val a = rays[0].angle
             val b = rays[1].angle
@@ -114,6 +114,7 @@ class GameAimGuideDetector {
         right: Int,
         bottom: Int,
         maxLength: Int,
+        balls: List<DetectedBall>,
         excluded: (Int, Int) -> Boolean
     ): List<Ray> {
         val rays = ArrayList<Ray>()
@@ -128,6 +129,16 @@ class GameAimGuideDetector {
             var hits = 0
             var gap = 0
             var bestRay: Ray? = null
+            // A ball may cover the first portion of a guide stroke. Permit a
+            // gap only when a detected ball actually lies on this ray.
+            val occlusionLimit = balls.mapNotNull { ball ->
+                val vx = ball.center.x - ring.center.x
+                val vy = ball.center.y - ring.center.y
+                val along = vx * dx + vy * dy
+                val across = abs(vx * px + vy * py)
+                if (along > 0f && across <= ball.radius * 1.45f)
+                    ring.radius + 9 + along + ball.radius * 1.5f else null
+            }.maxOrNull() ?: (ring.radius + 9f)
             for (distance in ring.radius + 1..maxLength) {
                 val fx = ring.center.x + dx * distance
                 val fy = ring.center.y + dy * distance
@@ -153,7 +164,7 @@ class GameAimGuideDetector {
                     gap++
                     if (gap > 4) {
                         val length = lastHit - runStart + 1
-                        if (runStart <= ring.radius + 9 && length >= 24 && hits >= 16) {
+                        if (runStart <= occlusionLimit && length >= 24 && hits >= 16) {
                             val candidate = Ray(angle, length, hits)
                             if (bestRay == null || candidate.length > bestRay!!.length) bestRay = candidate
                         }
@@ -163,7 +174,7 @@ class GameAimGuideDetector {
             }
             if (runStart >= 0) {
                 val length = lastHit - runStart + 1
-                if (runStart <= ring.radius + 9 && length >= 24 && hits >= 16) {
+                if (runStart <= occlusionLimit && length >= 24 && hits >= 16) {
                     val candidate = Ray(angle, length, hits)
                     if (bestRay == null || candidate.length > bestRay!!.length) bestRay = candidate
                 }
