@@ -80,15 +80,18 @@ class GameAimGuideDetector {
         // more white pixels. Require a confidently detected cue ball and keep
         // candidate reticles in the small, physically plausible zone around it.
         val cueBalls = balls.filter {
-            it.ballId == BallIdentity.CUE && it.confidence >= 0.20f
+            it.ballId == BallIdentity.CUE && it.confidence >= 0.20f &&
+                it.radius in 5f..40f
         }
-        if (cueBalls.size != 1) return emptyList()
-        val cue = cueBalls.single()
-        val minCueDistance = cue.radius * 1.65f
-        val maxCueDistance = cue.radius * 5.25f
+        if (cueBalls.isEmpty()) return emptyList()
+        // Multiple nearby cue hypotheses can occur in crowded or partially
+        // occluded frames. Anchor against any credible cue candidate rather
+        // than rejecting the entire frame because the detector returned two.
         val anchored = coarse.filter { candidate ->
-            val d = distance(candidate.center, cue.center)
-            d in minCueDistance..maxCueDistance
+            cueBalls.any { cue ->
+                val d = distance(candidate.center, cue.center)
+                d in (cue.radius * 1.65f)..(cue.radius * 5.25f)
+            }
         }
         if (anchored.isEmpty()) return emptyList()
 
