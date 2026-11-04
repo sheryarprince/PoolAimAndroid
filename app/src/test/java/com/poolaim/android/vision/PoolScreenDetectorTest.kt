@@ -136,6 +136,20 @@ class PoolScreenDetectorTest {
         }
         assertTrue(angles.any { kotlin.math.abs(it) < 0.25f })
         assertTrue(angles.any { it > 2.0f || it < -2.0f })
+        // Extended rays must terminate on the inset felt boundary, not at
+        // the short visible stroke endpoint.
+        assertTrue(guides.all { guide ->
+            kotlin.math.abs(guide.end.x - 25f) < 1.5f ||
+                kotlin.math.abs(guide.end.x - 475f) < 1.5f ||
+                kotlin.math.abs(guide.end.y - 25f) < 1.5f ||
+                kotlin.math.abs(guide.end.y - 375f) < 1.5f
+        })
+        // The reticle and its two strokes must remain detectable when the
+        // cue ball has no reliable identity classification.
+        val withoutCueClassification = GameAimGuideDetector().detect(
+            frame, TableBounds(20f, 20f, 480f, 380f), balls = emptyList()
+        )
+        assertEquals(2, withoutCueClassification.size)
     }
 
     @Test fun ignoresWhiteCueBallWhenNoGuideStrokeExists() {
